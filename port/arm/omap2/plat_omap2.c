@@ -29,6 +29,7 @@
 /*=========================================================  INCLUDE FILES  ==*/
 
 #include <linux/platform_device.h>
+#include <linux/pm_runtime.h>
 #include <plat/omap_device.h>
 #include <plat/mcspi.h>
 #include <mach/edma.h>
@@ -78,6 +79,9 @@ static inline uint32_t getId(
     struct devData *    devData);
 
 static int32_t resRequest(
+    struct devData *    devData);
+
+static void resRelease(
     struct devData *    devData);
 
 /*=======================================================  LOCAL VARIABLES  ==*/
@@ -324,18 +328,47 @@ int32_t portDevCreate(
 
         return (ret);
     }
+    pm_runtime_enable(&devData->pDev->dev);
     *dev = dev_;
 
     return (ret);
 }
 
-void portDevDestroy(
+int32_t portDevEnable(
     struct rtdm_device * dev) {
 
-    struct devData *     devData;
+    int                 retval;
+    struct devData *    devData;
 
     devData = getDevData(
         dev);
+    retval = pm_runtime_get_sync(&devData->pDev->dev);
+
+    return ((int32_t)retval);
+}
+
+int32_t portDevDisable(
+    struct rtdm_device * dev) {
+
+    int                 retval;
+    struct devData *    devData;
+
+    devData = getDevData(
+        dev);
+    retval = pm_runtime_put_sync(&devData->pDev->dev);
+
+    return ((uint32_t)retval);
+}
+
+void portDevDestroy(
+    struct rtdm_device * dev) {
+
+    struct devData *    devData;
+
+    devData = getDevData(
+        dev);
+    pm_runtime_put_sync(&devData->pDev->dev);
+    pm_runtime_disable(&devData->pDev->dev);
 
     if (TRUE == devData->devBuilt) {
         devData->devBuilt = FALSE;
