@@ -36,46 +36,75 @@
 #include "arch/compiler.h"
 
 /*===============================================================  MACRO's  ==*/
-
-/*------------------------------------------------------------------------*//**
- * @name        Macro group
- * @brief       brief description
- * @{ *//*--------------------------------------------------------------------*/
-
-/** @} *//*-------------------------------------------------------------------*/
 /*------------------------------------------------------  C++ extern begin  --*/
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /*============================================================  DATA TYPES  ==*/
-
-/*------------------------------------------------------------------------*//**
- * @name        Data types group
- * @brief       brief description
- * @{ *//*--------------------------------------------------------------------*/
-
-/** @} *//*-------------------------------------------------------------------*/
 /*======================================================  GLOBAL VARIABLES  ==*/
-
-/*------------------------------------------------------------------------*//**
- * @name        Variables group
- * @brief       brief description
- * @{ *//*--------------------------------------------------------------------*/
-
-/** @} *//*-------------------------------------------------------------------*/
 /*===================================================  FUNCTION PROTOTYPES  ==*/
 
+/**@brief       Create port side of device driver
+ * @param       dev
+ *              RT device descriptor which will be initialized by this function
+ * @param       devTemplate
+ *              RT device template descriptor
+ * @param       devId
+ *              Unique device ID number (reffer to IC datasheet for IDs)
+ * @return      Operation status:
+ *              0 - SUCCESS
+ *              !0 - standard Linux error define
+ * @details     This function will create port side of device driver according
+ *              to RT device template descriptor and will fill unique device
+ *              members to appropriate values. This function is also responsible
+ *              for allocation of private data structures.
+ */
 int32_t portDevCreate(
     struct rtdm_device ** dev,
     const struct rtdm_device * devTemplate,
     uint32_t            devId);
 
+/**@brief       Destroy port side of device driver
+ * @param       dev
+ *              RT device descriptor which was previously initialized by
+ *              portDevCreate()
+ * @details     This function will release all resources allocated by
+ *              portDevCreate() function
+ */
 void portDevDestroy(
     struct rtdm_device * dev);
 
+/**@brief       Returns if device with specified ID can be managed by this
+ *              driver
+ */
 bool_T portDevIsReady(
     uint32_t            num);
+
+/**@brief       Enable port side device driver
+ * @param       dev
+ *              RT device descriptor
+ * @return      Operation status:
+ *              0 - SUCCESS
+ *              !0 - standard Linux error define
+ * @details     If port device has PM functionality then this function will put
+ *              the device into enabled/running state which means that it will
+ *              turn on all clocks needed by the device and it's data/address
+ *              busses.
+ */
+int32_t portDevEnable(
+    struct rtdm_device * dev);
+
+/**@brief       Disable port side device driver
+ * @param       dev
+ *              RT device descriptor
+ * @return      Operation status:
+ *              0 - SUCCESS
+ *              !0 - standard Linux error define
+ * @details     Put the device into sleep state if applicable.
+ */
+int32_t portDevDisable(
+    struct rtdm_device * dev);
 
 /*--------------------------------------------------------  C++ extern end  --*/
 #ifdef __cplusplus
