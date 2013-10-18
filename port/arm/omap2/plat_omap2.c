@@ -72,11 +72,15 @@ struct devData {
 
 /*=============================================  LOCAL FUNCTION PROTOTYPES  ==*/
 
+/**@brief       Get device data from RT device descriptor
+ */
 static inline struct devData * getDevData(
     struct rtdm_device * dev);
 
-static inline uint32_t getId(
-    struct devData *    devData);
+/**@brief       Get device Id from RT device data
+ */
+static inline uint32_t getDevId(
+    struct rtdm_device * dev);
 
 static int32_t resRequest(
     struct devData *    devData);
@@ -94,8 +98,13 @@ static inline struct devData * getDevData(
     return ((struct devData *)dev->device_data);
 }
 
-static inline uint32_t getId(
-    struct devData *    devData) {
+static inline uint32_t getDevId(
+    struct rtdm_device * dev) {
+
+    struct devData *    devData;
+
+    devData = getDevData(
+        dev);
 
     return ((uint32_t)devData->pDev->id);
 }
