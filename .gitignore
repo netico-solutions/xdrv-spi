@@ -1,6 +1,17 @@
+.tmp_versions/
+
 .cproject
 .project
 .settings
 
+*.ko.cmd
+*.o.cmd
+*.mod.o.mod
+*.mod.c
+*.mod.o
+*.o
+*.ko
+Module.symvers
+modules.order
 *~
 .*~
