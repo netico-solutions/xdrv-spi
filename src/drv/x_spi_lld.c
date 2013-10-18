@@ -28,19 +28,111 @@
 
 /*=========================================================  INCLUDE FILES  ==*/
 
+#include "linux/io.h"
+
 #include "drv/x_spi_lld.h"
 #include "drv/x_spi.h"
 #include "dbg/dbg.h"
 
 /*=========================================================  LOCAL MACRO's  ==*/
 /*======================================================  LOCAL DATA TYPES  ==*/
+
+enum mcspiRegs {
+    MCSPI_REVISION      = 0x000u,
+    MCSPI_SYSCONFIG     = 0x110u,
+    MCSPI_SYSSTATUS     = 0x114u,
+    MCSPI_IRQSTATUS     = 0x118u,
+    MCSPI_IRQENABLE     = 0x11cu,
+    MCSPI_SYST          = 0x124u,
+    MCSPI_MODULCTRL     = 0x128u,
+    MCSPI_CHANNEL_BASE  = 0x12cu,
+    MCSPI_XFERLEVEL     = 0x17cu,
+    MCSPI_DAFTX         = 0x180u,
+    MCSPI_DAFRX         = 0x1a0u
+};
+
+enum mcspiChnRegs {
+    MCSPI_CH_CONF       = 0x00u,
+    MCSPI_CH_STAT       = 0x04u,
+    MCSPI_CH_CTRL       = 0x08u,
+    MCSPI_CH_TX         = 0x0cu,
+    MCSPI_CH_RX         = 0x10u,
+    MCSPI_CHANNEL_SIZE  = 0x14u
+};
+
 /*=============================================  LOCAL FUNCTION PROTOTYPES  ==*/
+
+static inline void regWrite(
+    volatile uint8_t *  io,
+    enum mcspiRegs      reg,
+    uint32_t            val);
+
+static inline uint32_t regRead(
+    volatile uint8_t *  io,
+    enum mcspiReg       reg);
+
+static inline void regChnWrite(
+    volatile uint8_t *  io,
+    uint32_t            chn,
+    enum mcspiChnRegs   reg,
+    uint32_t            val);
+
+static inline uint32_t regChnRead(
+    volatile uint8_t *  io,
+    uint32_t            chn,
+    enum mcspiChnRegs   reg);
+
 /*=======================================================  LOCAL VARIABLES  ==*/
 
 DECL_MODULE_INFO("x_spi_lld", "Low-level device driver", DEF_DRV_AUTHOR);
 
 /*======================================================  GLOBAL VARIABLES  ==*/
 /*============================================  LOCAL FUNCTION DEFINITIONS  ==*/
+
+static inline void regWrite(
+    volatile uint8_t *  io,
+    enum mcspiReg       reg,
+    uint32_t            val) {
+
+    LOG_DBG("UART wr: %p, %x = %x", io, reg, val);
+
+    iowrite32(val, &io[reg]);
+}
+
+static inline uint32_t regRead(
+    volatile uint8_t *  io,
+    enum mcspiReg       reg) {
+
+    uint32_t            ret;
+
+    ret = ioread32(&io[reg]);
+
+    LOG_DBG("UART rd: %p, %x : %x", io, reg, ret);
+
+    return (ret);
+}
+
+static inline void regChnWrite(
+    volatile uint8_t *  io,
+    uint32_t            chn,
+    enum mcspiReg       reg,
+    uint32_t            val) {
+
+    regWrite(io, MCSPI_CHANNEL_BASE + (chn * MCSPI_CHANNEL_SIZE) + reg, val);
+}
+
+static inline uint32_t regChnRead(
+    volatile uint8_t *  io,
+    uint32_t            chn,
+    enum mcspiReg       reg) {
+
+    uint32_t            ret;
+
+    ret = regRead(io, MCSPI_CHANNEL_BASE + (chn * MCSPI_CHANNEL_SIZE) + reg);
+
+    return (ret);
+}
+
 /*===================================  GLOBAL PRIVATE FUNCTION DEFINITIONS  ==*/
 /*====================================  GLOBAL PUBLIC FUNCTION DEFINITIONS  ==*/
 
