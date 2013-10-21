@@ -32,6 +32,7 @@
 
 #include "drv/x_spi_lld.h"
 #include "drv/x_spi.h"
+#include "log/log.h"
 #include "dbg/dbg.h"
 
 /*=========================================================  LOCAL MACRO's  ==*/
@@ -69,7 +70,7 @@ static inline void regWrite(
 
 static inline uint32_t regRead(
     volatile uint8_t *  io,
-    enum mcspiReg       reg);
+    enum mcspiRegs      reg);
 
 static inline void regChnWrite(
     volatile uint8_t *  io,
@@ -91,7 +92,7 @@ DECL_MODULE_INFO("x_spi_lld", "Low-level device driver", DEF_DRV_AUTHOR);
 
 static inline void regWrite(
     volatile uint8_t *  io,
-    enum mcspiReg       reg,
+    enum mcspiRegs      reg,
     uint32_t            val) {
 
     LOG_DBG("UART wr: %p, %x = %x", io, reg, val);
@@ -101,7 +102,7 @@ static inline void regWrite(
 
 static inline uint32_t regRead(
     volatile uint8_t *  io,
-    enum mcspiReg       reg) {
+    enum mcspiRegs      reg) {
 
     uint32_t            ret;
 
@@ -115,7 +116,7 @@ static inline uint32_t regRead(
 static inline void regChnWrite(
     volatile uint8_t *  io,
     uint32_t            chn,
-    enum mcspiReg       reg,
+    enum mcspiChnRegs   reg,
     uint32_t            val) {
 
     regWrite(io, MCSPI_CHANNEL_BASE + (chn * MCSPI_CHANNEL_SIZE) + reg, val);
@@ -124,7 +125,7 @@ static inline void regChnWrite(
 static inline uint32_t regChnRead(
     volatile uint8_t *  io,
     uint32_t            chn,
-    enum mcspiReg       reg) {
+    enum mcspiChnRegs   reg) {
 
     uint32_t            ret;
 
