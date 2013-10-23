@@ -3,20 +3,18 @@
  *
  * Copyright (C) 2011, 2012 - Nenad Radulovic
  *
- * x_spi is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * x_spi is free software; you can redistribute it and/or modify it under the
+ * terms of the GNU General Public License as published by the Free Software
+ * Foundation; either version 2 of the License, or (at your option) any later
+ * version.
  *
- * x_spi is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * x_spi is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with x_spi; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor,
- * Boston, MA  02110-1301  USA
+ * You should have received a copy of the GNU General Public License along with
+ * x_spi; if not, write to the Free Software Foundation, Inc., 51 Franklin St,
+ * Fifth Floor, Boston, MA  02110-1301  USA
  *
  * web site:    http://blueskynet.dyndns-server.com
  * e-mail  :    blueskyniss@gmail.com
@@ -30,12 +28,23 @@
 
 #include "linux/io.h"
 
+#include "port/port.h"
 #include "drv/x_spi_lld.h"
 #include "drv/x_spi.h"
 #include "log/log.h"
 #include "dbg/dbg.h"
 
 /*=========================================================  LOCAL MACRO's  ==*/
+
+#define MCSPI_REVISION_X_MAJOR_Pos      (8u)
+#define MCSPI_REVISION_X_MAJOR_Mask     (0x03u << MCSPI_REVISION_X_MAJOR_Pos)
+#define MCSPI_REVISION_Y_MINOR_Pos      (0u)
+#define MCSPI_REVISION_Y_MINOR_Mask     (0x1fu << MCSPI_REVISION_Y_MINOR_Pos)
+#define MCSPI_SYSCONFIG_SOFTRESET_Pos   (1u)
+#define MCSPI_SYSCONFIG_SOFTRESET_Mask  (0x01u << MCSPI_SYSCONFIG_SOFTRESET_Pos)
+#define MCSPI_SYSSTATUS_RESETDONE_Pos   (0u)
+#define MCSPI_SYSSTATUS_RESETDONE_Mask  (0x01u << MCSPI_SYSSTATUS_RESETDONE_Pos)
+
 /*======================================================  LOCAL DATA TYPES  ==*/
 
 enum mcspiRegs {
@@ -140,8 +149,20 @@ static inline uint32_t regChnRead(
 int32_t lldDevInit(
     struct rtdm_device * dev) {
 
+    volatile uint8_t *  io;
     int32_t             retval;
+    uint32_t            revision;
 
+    io = portRemapGet(
+        dev);
+    revision = regRead(
+        io,
+        MCSPI_REVISION);                                                        /* Read revision info                                       */
+    LOG_INFO("hardware version: %d.%d",
+        (revision & MCSPI_REVISION_X_MAJOR_Mask) >> MCSPI_REVISION_X_MAJOR_Pos,
+        (revision & MCSPI_REVISION_Y_MINOR_Mask) >> MCSPI_REVISION_Y_MINOR_Pos);
+    lldDevReset(
+        dev);
     retval = 0;
 
     return (retval);
@@ -150,6 +171,28 @@ int32_t lldDevInit(
 void lldDevTerm(
     struct rtdm_device * dev) {
 
+    lldDevReset(
+        dev);
+}
+
+void lldDevReset(
+    struct rtdm_device * dev) {
+
+    volatile uint8_t *  io;
+    uint32_t            sysconfig;
+
+    io = portRemapGet(
+        dev);
+
+    sysconfig = regRead(
+        io,
+        MCSPI_SYSCONFIG);
+    regWrite(
+        io,
+        MCSPI_SYSCONFIG,
+        sysconfig | MCSPI_SYSCONFIG_SOFTRESET_Mask);                            /* Reset device module                                      */
+
+    while (0u == (regRead(io, MCSPI_SYSSTATUS) & MCSPI_SYSSTATUS_RESETDONE_Mask));  /* Wait a few cycles for reset procedure                */
 }
 
 /*================================*//** @cond *//*==  CONFIGURATION ERRORS  ==*/
