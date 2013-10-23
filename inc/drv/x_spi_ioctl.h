@@ -136,6 +136,7 @@
 
 /**@} *//*----------------------------------------------------------------*//**
  * @name        SPI Transfer format
+ * @brief       All IOC data/control is per channel
  * @{ *//*--------------------------------------------------------------------*/
 
 /**@brief       Set data word length
@@ -222,6 +223,15 @@
 /**@brief       Get transmit/receive mode
  */
 #define XSPI_IOC_GET_TRANSFER_MODE      _IOR(XSPI_IOC_MAGIC, 114, int)
+
+/**@} *//*----------------------------------------------------------------*//**
+ * @name        SPI Status
+ * @brief       All IOC data/control is per channel
+ * @{ *//*--------------------------------------------------------------------*/
+
+/**@brief       Get the status
+ */
+#define XSPI_IOC_GET_STATUS             _IOR(XSPI_IOC_MAGIC, 115, int)
 
 /**@} *//*--------------------------------------------------------------------*/
 
