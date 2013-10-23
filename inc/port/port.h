@@ -3,20 +3,18 @@
  *
  * Copyright (C) 2011, 2012 - Nenad Radulovic
  *
- * x_spi is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * x_spi is free software; you can redistribute it and/or modify it under the
+ * terms of the GNU General Public License as published by the Free Software
+ * Foundation; either version 2 of the License, or (at your option) any later
+ * version.
  *
- * x_spi is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * x_spi is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with x_spi; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor,
- * Boston, MA  02110-1301  USA
+ * You should have received a copy of the GNU General Public License along with
+ * x_spi; if not, write to the Free Software Foundation, Inc., 51 Franklin St,
+ * Fifth Floor, Boston, MA  02110-1301  USA
  *
  * web site:    http://blueskynet.dyndns-server.com
  * e-mail  :    blueskyniss@gmail.com
@@ -75,12 +73,6 @@ int32_t portDevCreate(
 void portDevDestroy(
     struct rtdm_device * dev);
 
-/**@brief       Returns if device with specified ID can be managed by this
- *              driver
- */
-bool_T portDevIsReady(
-    uint32_t            num);
-
 /**@brief       Enable port side device driver
  * @param       dev
  *              RT device descriptor
@@ -104,6 +96,39 @@ int32_t portDevEnable(
  * @details     Put the device into sleep state if applicable.
  */
 int32_t portDevDisable(
+    struct rtdm_device * dev);
+
+/**@brief       Returns if device with specified ID can be managed by this
+ *              driver
+ * @param       num
+ *              ID of the device
+ * @return      Device status:
+ *              TRUE - device can be managed
+ *              FALSE - device can't be managed
+ */
+bool_T portDevIsReady(
+    uint32_t            num);
+
+/**@brief       Returns if channel with specified ID can be managed by this
+ *              driver
+ * @param       dev
+ *              RT device descriptor
+ * @param       chn
+ *              Channel number
+ * @return      Channel status:
+ *              TRUE - channel can be managed
+ *              FALSE - channel can't be managed
+ */
+uint32_t portChnIsOnline(
+    struct rtdm_device * dev,
+    uint32_t            chn);
+
+/**@brief       Returns IO remap address
+ * @param       dev
+ *              RT device descriptor
+ * @return      IO remap address
+ */
+volatile uint8_t * portRemapGet(
     struct rtdm_device * dev);
 
 /*--------------------------------------------------------  C++ extern end  --*/

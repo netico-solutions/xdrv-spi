@@ -65,7 +65,7 @@ struct devData {
     struct platform_device * pDev;
     struct addr         addr;                                                   /* Module address information                               */
     struct dmaData *    dma;                                                    /* Array of DMA channels                                    */
-    uint32_t            numCs;                                                  /* Number of CS signals                                     */
+    uint32_t            online;                                                 /* Number of CS signals                                     */
     bool_T              devBuilt;
     bool_T              devActv;
 };
@@ -142,6 +142,7 @@ static int32_t resRequest(
     devData->addr.remap = ioremap(
         (unsigned long)devData->addr.phy,
         devData->addr.size);
+    LOG_DBG("vm  addr 0x%p", devData->addr.remap);
 
     if (NULL == devData->addr.remap) {
         LOG_DBG("failed to remap memory");
@@ -152,7 +153,7 @@ static int32_t resRequest(
         return (-ENOMEM);
     }
     devData->dma = kcalloc(
-        devData->numCs,
+        devData->online,
         sizeof(struct dmaData),
         GFP_KERNEL);                                                            /* Storage for DMA structures                               */
 
@@ -168,7 +169,7 @@ static int32_t resRequest(
     }
     ret = 0;
 
-    for (cnt = 0u; cnt < devData->numCs; cnt++) {
+    for (cnt = 0u; cnt < devData->online; cnt++) {
         char            resName[DEF_DRV_NAME_LEN];
 
         LOG_DBG("CS num %d", cnt);
@@ -306,7 +307,7 @@ int32_t portDevCreate(
         LOG_DBG("building HWMOD device");
         devData->pDev = omap_device_build(
             DEF_DRV_NAME,
-            devId, /* Stupid OD needs +1 id number here */
+            devId,                                                              /* Stupid OMAP DEVICE needs +1 id number here               */
             hwmod,
             NULL,
             0,
@@ -324,8 +325,8 @@ int32_t portDevCreate(
         }
     }
     devData->pDev = hwmod->od->pdev;
-    devData->numCs = ((struct omap2_mcspi_dev_attr *)hwmod->dev_attr)->num_chipselect;
-    LOG_DBG("number of chipselects %d", devData->numCs);
+    devData->online = ((struct omap2_mcspi_dev_attr *)hwmod->dev_attr)->num_chipselect;
+    LOG_INFO("number of channels %d", devData->online);
     ret = resRequest(
         devData);
 
@@ -341,6 +342,31 @@ int32_t portDevCreate(
     *dev = dev_;
 
     return (ret);
+}
+
+void portDevDestroy(
+    struct rtdm_device * dev) {
+
+    struct devData *    devData;
+
+    devData = getDevData(
+        dev);
+    pm_runtime_put_sync(&devData->pDev->dev);
+    pm_runtime_disable(&devData->pDev->dev);
+
+    if (TRUE == devData->devBuilt) {
+        devData->devBuilt = FALSE;
+        omap_device_delete(
+            to_omap_device(devData->pDev));
+        platform_device_put(
+            devData->pDev);
+    }
+    resRelease(
+        devData);
+    kfree(
+        devData);
+    kfree(
+        dev);
 }
 
 int32_t portDevEnable(
@@ -369,31 +395,6 @@ int32_t portDevDisable(
     return ((uint32_t)retval);
 }
 
-void portDevDestroy(
-    struct rtdm_device * dev) {
-
-    struct devData *    devData;
-
-    devData = getDevData(
-        dev);
-    pm_runtime_put_sync(&devData->pDev->dev);
-    pm_runtime_disable(&devData->pDev->dev);
-
-    if (TRUE == devData->devBuilt) {
-        devData->devBuilt = FALSE;
-        omap_device_delete(
-            to_omap_device(devData->pDev));
-        platform_device_put(
-            devData->pDev);
-    }
-    resRelease(
-        devData);
-    kfree(
-        devData);
-    kfree(
-        dev);
-}
-
 bool_T portDevIsReady(
     uint32_t            num) {
 
@@ -404,6 +405,35 @@ bool_T portDevIsReady(
 
         return (FALSE);
     }
+}
+
+bool_T portChnIsOnline(
+    struct rtdm_device * dev,
+    uint32_t            chn) {
+
+    struct devData *    devData;
+
+    devData = getDevData(
+        dev);
+
+    if (chn < devData->online) {
+
+        return (TRUE);
+    } else {
+
+        return (FALSE);
+    }
+}
+
+volatile uint8_t * portRemapGet(
+    struct rtdm_device * dev) {
+
+    struct devData *    devData;
+
+    devData = getDevData(
+        dev);
+
+    return (devData->addr.remap);
 }
 
 /*================================*//** @cond *//*==  CONFIGURATION ERRORS  ==*/
