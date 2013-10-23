@@ -36,7 +36,18 @@
 /** @endcond */
 /*==============================================================  SETTINGS  ==*/
 
+/**@brief       DMA mode selection
+ * @details     0 - no DMA mode
+ */
 #define CFG_DMA_MODE                    0u
+
+/**@brief       Maximum number of devices
+ */
+#define CFG_MAX_DEVICES                 10u
+
+/**@brief       Maximum number of channels per device
+ */
+#define CFG_MAX_CHN                     4u
 
 /*================================*//** @cond *//*==  CONFIGURATION ERRORS  ==*/
 /** @endcond *//** @} *//******************************************************
