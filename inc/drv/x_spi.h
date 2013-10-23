@@ -34,6 +34,7 @@
 #include "rtdm/rtdm_driver.h"
 
 #include "drv/x_spi_cfg.h"
+#include "dbg/dbg.h"
 
 /*===============================================================  MACRO's  ==*/
 
@@ -54,13 +55,17 @@ extern "C" {
 /*============================================================  DATA TYPES  ==*/
 
 struct devCtx {
-    struct unit {
-        rtdm_event_t        opr;
-        rtdm_sem_t          acc;
-    }                   tx, rx;
-    struct cache {
-        volatile uint8_t *  io;
-    }                   cache;
+    rtdm_lock_t         lock;
+    struct chnCtx {
+        struct unitCtx {
+
+        }                   tx, rx;
+        bool_T              online;
+    } chns[CFG_MAX_CHN];
+    uint32_t            chn;
+#if (1u == CFG_DBG_API_VALIDATION)
+    portReg_T           signature;
+#endif
 };
 
 /*======================================================  GLOBAL VARIABLES  ==*/

@@ -32,6 +32,7 @@
 #include "linux/printk.h"
 
 #include "arch/compiler.h"
+#include "drv/x_spi_ioctl.h"
 #include "drv/x_spi_cfg.h"
 #include "drv/x_spi_lld.h"
 #include "drv/x_spi.h"
@@ -41,33 +42,33 @@
 
 /*=========================================================  LOCAL MACRO's  ==*/
 
-#define DEF_MAX_DEVICES                 10
+#define DEF_DEVCTX_SIGNATURE            0xdeadbeefu
 
 /*======================================================  LOCAL DATA TYPES  ==*/
 /*=============================================  LOCAL FUNCTION PROTOTYPES  ==*/
 
-int handleOpen(
+static int handleOpen(
     struct rtdm_dev_context * ctx,
     rtdm_user_info_t *  usr,
     int                 oflag);
 
-int handleClose(
+static int handleClose(
     struct rtdm_dev_context * ctx,
     rtdm_user_info_t *  usr);
 
-int handleIOctl(
+static int handleIOctl(
     struct rtdm_dev_context * ctx,
     rtdm_user_info_t *  usr,
     unsigned int        req,
     void __user *       arg);
 
-ssize_t handleRd(
+static ssize_t handleRd(
     struct rtdm_dev_context * ctx,
     rtdm_user_info_t *  usr,
     void *              dst,
     size_t              bytes);
 
-ssize_t handleWr(
+static ssize_t handleWr(
     struct rtdm_dev_context * ctx,
     rtdm_user_info_t *  usr,
     const void *        src,
@@ -77,7 +78,7 @@ ssize_t handleWr(
 
 DECL_MODULE_INFO(DEF_DRV_NAME, DEF_DRV_DESCRIPTION, DEF_DRV_AUTHOR);
 
-static struct rtdm_device * Devs[DEF_MAX_DEVICES];
+static struct rtdm_device * Devs[CFG_MAX_DEVICES];
 
 static const struct rtdm_device DevTemplate = {
     .struct_version     = RTDM_DEVICE_STRUCT_VER,
@@ -126,12 +127,60 @@ MODULE_SUPPORTED_DEVICE(DEF_DRV_SUPP_DEVICE);
 
 /*============================================  LOCAL FUNCTION DEFINITIONS  ==*/
 
+static struct devCtx * getDevCtx(
+    struct rtdm_dev_context * rtdmDevCtx) {
+
+    return ((struct devCtx *)&rtdmDevCtx->dev_private[0]);
+}
+
+static void unitCtxInit(
+    struct unitCtx *    unitCtx) {
+
+}
+
+static void chnCtxInit(
+    struct chnCtx *     chnCtx) {
+
+    chnCtx->online = FALSE;
+}
+
+static void chnCtxOnlineSet(
+    struct chnCtx *     chnCtx,
+    bool_T              state) {
+
+    chnCtx->online = state;
+}
+
+static void ctxInit(
+    struct rtdm_dev_context * ctx) {
+
+    struct devCtx *     devCtx;
+    uint32_t            i;
+
+    devCtx = getDevCtx(ctx);
+
+    for (i = 0u; i < CFG_MAX_CHN; i++) {
+        chnCtxInit(
+            &devCtx->chns[i]);
+
+        if (TRUE == portChnIsOnline(ctx->device, i)) {
+            LOG_INFO("initializing channel: %d", i);
+            chnCtxOnlineSet(
+                &devCtx->chns[i],
+                TRUE);
+        }
+    }
+    rtdm_lock_init(&devCtx->lock);
+    devCtx->chn = 0u;
+    ES_DBG_API_OBLIGATION(devCtx->signature = DEF_DEVCTX_SIGNATURE);
+}
+
 /******************************************************************************
  * DMA MODE 0
  ******************************************************************************/
 #if (0u == CFG_DMA_MODE)
 
-int handleOpen(
+static int handleOpen(
     struct rtdm_dev_context * ctx,
     rtdm_user_info_t *  usr,
     int                 oflag) {
@@ -143,7 +192,7 @@ int handleOpen(
     return (retval);
 }
 
-int handleClose(
+static int handleClose(
     struct rtdm_dev_context * ctx,
     rtdm_user_info_t *  usr) {
 
@@ -154,20 +203,60 @@ int handleClose(
     return (retval);
 }
 
-int handleIOctl(
+static int handleIOctl(
     struct rtdm_dev_context * ctx,
     rtdm_user_info_t *  usr,
     unsigned int        req,
     void __user *       arg) {
 
     int                 retval;
+    struct devCtx *     devCtx;
 
+    devCtx = getDevCtx(ctx);
     retval = 0;
+
+    switch (req) {
+/*-- XSPI_IOC_SET_CURRENT_CHN ------------------------------------------------*/
+        case XSPI_IOC_SET_CURRENT_CHN : {
+            rtdm_lockctx_t  lockCtx;
+
+            if ((0 > (int)arg) || (CFG_MAX_CHN <= (int)arg)) {
+
+                return (-EINVAL);
+            }
+            rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
+            devCtx->chn = (uint32_t)arg;
+            rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+
+            break;
+        }
+
+/*-- XSPI_IOC_GET_CURRENT_CHN ------------------------------------------------*/
+        case XSPI_IOC_GET_CURRENT_CHN : {
+            int             retval;
+
+            if (NULL != usr) {
+                retval = rtdm_safe_copy_to_user(
+                    usr,
+                    arg,
+                    &devCtx->chn,
+                    sizeof(uint32_t));
+            } else {
+                *(int *)arg = (int)devCtx->chn;
+            }
+
+            break;
+        }
+
+        case XSPI_IOC_SET_FIFO_MODE : {
+
+        }
+    }
 
     return (retval);
 }
 
-ssize_t handleRd(
+static ssize_t handleRd(
     struct rtdm_dev_context * ctx,
     rtdm_user_info_t *  usr,
     void *              dst,
@@ -180,7 +269,7 @@ ssize_t handleRd(
     return (read);
 }
 
-ssize_t handleWr(
+static ssize_t handleWr(
     struct rtdm_dev_context * ctx,
     rtdm_user_info_t *  usr,
     const void *        src,
@@ -198,7 +287,7 @@ ssize_t handleWr(
  ******************************************************************************/
 #elif (1u == CFG_DMA_MODE)
 
-int handleOpen(
+static int handleOpen(
     struct rtdm_dev_context * ctx,
     rtdm_user_info_t *  usr,
     int                 oflag) {
@@ -210,7 +299,7 @@ int handleOpen(
     return (retval);
 }
 
-int handleClose(
+static int handleClose(
     struct rtdm_dev_context * ctx,
     rtdm_user_info_t *  usr) {
 
@@ -221,7 +310,7 @@ int handleClose(
     return (retval);
 }
 
-int handleIOctl(
+static int handleIOctl(
     struct rtdm_dev_context * ctx,
     rtdm_user_info_t *  usr,
     unsigned int        req,
@@ -234,7 +323,7 @@ int handleIOctl(
     return (retval);
 }
 
-ssize_t handleRd(
+static ssize_t handleRd(
     struct rtdm_dev_context * ctx,
     rtdm_user_info_t *  usr,
     void *              dst,
@@ -247,7 +336,7 @@ ssize_t handleRd(
     return (read);
 }
 
-ssize_t handleWr(
+static ssize_t handleWr(
     struct rtdm_dev_context * ctx,
     rtdm_user_info_t *  usr,
     const void *        src,
@@ -262,7 +351,7 @@ ssize_t handleWr(
 
 #elif (2u == CFG_DMA_MODE)
 
-int handleOpen(
+static int handleOpen(
     struct rtdm_dev_context * ctx,
     rtdm_user_info_t *  usr,
     int                 oflag) {
@@ -274,7 +363,7 @@ int handleOpen(
     return (retval);
 }
 
-int handleClose(
+static int handleClose(
     struct rtdm_dev_context * ctx,
     rtdm_user_info_t *  usr) {
 
@@ -285,7 +374,7 @@ int handleClose(
     return (retval);
 }
 
-int handleIOctl(
+static int handleIOctl(
     struct rtdm_dev_context * ctx,
     rtdm_user_info_t *  usr,
     unsigned int        req,
@@ -298,7 +387,7 @@ int handleIOctl(
     return (retval);
 }
 
-ssize_t handleRd(
+static ssize_t handleRd(
     struct rtdm_dev_context * ctx,
     rtdm_user_info_t *  usr,
     void *              dst,
@@ -311,7 +400,7 @@ ssize_t handleRd(
     return (read);
 }
 
-ssize_t handleWr(
+static ssize_t handleWr(
     struct rtdm_dev_context * ctx,
     rtdm_user_info_t *  usr,
     const void *        src,
@@ -340,7 +429,7 @@ int __init moduleInit(
 
     LOG(DEF_DRV_DESCRIPTION " v%d.%d.%d", DEF_DRV_VERSION_MAJOR, DEF_DRV_VERSION_MINOR, DEF_DRV_VERSION_PATCH);
 
-    for (i = 0u; i < DEF_MAX_DEVICES; i++) {
+    for (i = 0u; i < CFG_MAX_DEVICES; i++) {
 
         if (TRUE == portDevIsReady(i)) {
             struct rtdm_device * dev;
@@ -357,6 +446,8 @@ int __init moduleInit(
                 retval = (int)ret;
                 break;
             }
+            portDevEnable(
+                dev);
             LOG_INFO("initializing SPI device: %d", i);
             ret = lldDevInit(
                 dev);
@@ -396,7 +487,7 @@ void __exit moduleTerm(
 
     uint32_t            i;
 
-    for (i = 0u; i < DEF_MAX_DEVICES; i++) {
+    for (i = 0u; i < CFG_MAX_DEVICES; i++) {
         struct rtdm_device * dev;
 
         dev = Devs[i];
@@ -412,6 +503,8 @@ void __exit moduleTerm(
                 LOG_WARN("SPI device %d failed to unregister cleanly, err: %d", i, -retval);
             }
             lldDevTerm(
+                dev);
+            portDevDisable(
                 dev);
             portDevDestroy(
                 dev);
