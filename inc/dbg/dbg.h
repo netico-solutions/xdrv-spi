@@ -1,22 +1,20 @@
 /*
- * This file is part of x_spi
+ * This file is part of eSolid
  *
  * Copyright (C) 2011, 2012 - Nenad Radulovic
  *
- * x_spi is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * eSolid is free software; you can redistribute it and/or modify it under the
+ * terms of the GNU General Public License as published by the Free Software
+ * Foundation; either version 2 of the License, or (at your option) any later
+ * version.
  *
- * x_spi is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * eSolid is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with x_spi; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor,
- * Boston, MA  02110-1301  USA
+ * You should have received a copy of the GNU General Public License along with
+ * eSolid; if not, write to the Free Software Foundation, Inc., 51 Franklin St,
+ * Fifth Floor, Boston, MA  02110-1301  USA
  *
  * web site:    http://blueskynet.dyndns-server.com
  * e-mail  :    blueskyniss@gmail.com
@@ -49,7 +47,7 @@
  * @param       modAuth
  *              Module author : string
  */
-#if (1U == CFG_DBG_ENABLE)
+#if (1u == CFG_DBG_ENABLE)
 # define DECL_MODULE_INFO(modName, modDesc, modAuth)                            \
     static const PORT_C_ROM struct dbgModInfo gModInfo_ = {                     \
         .name = modName,                                                        \
@@ -68,7 +66,7 @@
  *              @ref CFG_DBG_ENABLE.
  * @{ *//*--------------------------------------------------------------------*/
 
-#if (1U == CFG_DBG_ENABLE)
+#if (1u == CFG_DBG_ENABLE) || defined(__DOXYGEN__)
 /**@brief       Generic assert macro.
  * @param       msg
  *              Message : enum esDbgMsg : enumerated debug message.
@@ -119,7 +117,7 @@
  *              @ref CFG_DBG_INTERNAL_CHECK.
  * @{ *//*--------------------------------------------------------------------*/
 
-#if (1U == CFG_DBG_INTERNAL_CHECK)
+#if (1u == CFG_DBG_ENABLE) && (1u == CFG_DBG_INTERNAL_CHECK)
 
 /**@brief       Assert macro used for internal execution checking
  * @param       msg
@@ -141,7 +139,7 @@
  *              @ref CFG_DBG_API_VALIDATION.
  * @{ *//*--------------------------------------------------------------------*/
 
-#if (1U == CFG_DBG_API_VALIDATION) || defined(__DOXYGEN__)
+#if (1u == CFG_DBG_ENABLE) && (1U == CFG_DBG_API_VALIDATION) || defined(__DOXYGEN__)
 
 /**@brief       Execute code to fulfill the contract
  * @param       expr
