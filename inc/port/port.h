@@ -40,6 +40,16 @@ extern "C" {
 #endif
 
 /*============================================================  DATA TYPES  ==*/
+
+struct devData {
+    struct addr {
+        volatile uint8_t *  phy;
+        uint8_t *           remap;
+        size_t              size;
+    }                   addr;
+    uint8_t *           shadow;
+};
+
 /*======================================================  GLOBAL VARIABLES  ==*/
 /*===================================================  FUNCTION PROTOTYPES  ==*/
 
@@ -122,14 +132,6 @@ bool_T portDevIsReady(
 uint32_t portChnIsOnline(
     struct rtdm_device * dev,
     uint32_t            chn);
-
-/**@brief       Returns IO remap address
- * @param       dev
- *              RT device descriptor
- * @return      IO remap address
- */
-volatile uint8_t * portRemapGet(
-    struct rtdm_device * dev);
 
 /*--------------------------------------------------------  C++ extern end  --*/
 #ifdef __cplusplus

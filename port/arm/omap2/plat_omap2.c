@@ -48,12 +48,6 @@
 
 /*======================================================  LOCAL DATA TYPES  ==*/
 
-struct addr {
-    volatile uint8_t *  phy;
-    uint8_t *           remap;
-    size_t              size;
-};
-
 struct dmaData {
     struct {
         int32_t             chn;
@@ -61,10 +55,12 @@ struct dmaData {
     }                   tx, rx;
 };
 
-struct devData {
+struct privDevData {
+    struct devData      public;
     struct platform_device * pDev;
-    struct addr         addr;                                                   /* Module address information                               */
+#if (0u != CFG_DMA_MODE)
     struct dmaData *    dma;                                                    /* Array of DMA channels                                    */
+#endif
     uint32_t            online;                                                 /* Number of CS signals                                     */
     bool_T              devBuilt;
     bool_T              devActv;
@@ -74,7 +70,7 @@ struct devData {
 
 /**@brief       Get device data from RT device descriptor
  */
-static inline struct devData * getDevData(
+static inline struct privDevData * getPrivDevData(
     struct rtdm_device * dev);
 
 /**@brief       Get device Id from RT device data
@@ -83,38 +79,40 @@ static inline uint32_t getDevId(
     struct rtdm_device * dev);
 
 static int32_t resRequest(
-    struct devData *    devData);
+    struct privDevData *    devData);
 
 static void resRelease(
-    struct devData *    devData);
+    struct privDevData *    devData);
 
 /*=======================================================  LOCAL VARIABLES  ==*/
 /*======================================================  GLOBAL VARIABLES  ==*/
 /*============================================  LOCAL FUNCTION DEFINITIONS  ==*/
 
-static inline struct devData * getDevData(
+static inline struct privDevData * getPrivDevData(
     struct rtdm_device * dev) {
 
-    return ((struct devData *)dev->device_data);
+    return ((struct privDevData *)dev->device_data);
 }
 
 static inline uint32_t getDevId(
     struct rtdm_device * dev) {
 
-    struct devData *    devData;
+    struct privDevData *    devData;
 
-    devData = getDevData(
+    devData = getPrivDevData(
         dev);
 
     return ((uint32_t)devData->pDev->id);
 }
 
 static int32_t resRequest(
-    struct devData *    devData) {
+    struct privDevData *    devData) {
 
     int32_t             ret;
-    uint32_t            cnt;
     struct resource *   res;
+#if (0u != CFG_DMA_MODE)
+    uint32_t            cnt;
+#endif
 
     LOG_DBG("get resource mem");
     res = platform_get_resource(
@@ -127,31 +125,33 @@ static int32_t resRequest(
 
         return (-ENODEV);
     }
-    devData->addr.phy = (volatile uint8_t *)res->start;
-    devData->addr.size = (size_t)(res->end - res->start);
-    LOG_DBG("phy addr 0x%p", devData->addr.phy);
-    LOG_DBG("phy size 0x%x", devData->addr.size);
+    devData->public.addr.phy = (volatile uint8_t *)res->start;
+    devData->public.addr.size = (size_t)(res->end - res->start);
+    LOG_DBG("phy addr 0x%p", devData->public.addr.phy);
+    LOG_DBG("phy size 0x%x", devData->public.addr.size);
 
-    if (NULL == request_mem_region((resource_size_t)devData->addr.phy,
-                                   (resource_size_t)devData->addr.size,
+    if (NULL == request_mem_region((resource_size_t)devData->public.addr.phy,
+                                   (resource_size_t)devData->public.addr.size,
                                    dev_name(&devData->pDev->dev))) {
         LOG_DBG("failed to request memory region");
 
         return (-EBUSY);
     }
-    devData->addr.remap = ioremap(
-        (unsigned long)devData->addr.phy,
-        devData->addr.size);
-    LOG_DBG("vm  addr 0x%p", devData->addr.remap);
+    devData->public.addr.remap = ioremap(
+        (unsigned long)devData->public.addr.phy,
+        devData->public.addr.size);
+    LOG_DBG("vm  addr 0x%p", devData->public.addr.remap);
 
-    if (NULL == devData->addr.remap) {
+    if (NULL == devData->public.addr.remap) {
         LOG_DBG("failed to remap memory");
         release_mem_region(
-            (resource_size_t)devData->addr.phy,
-            devData->addr.size);
+            (resource_size_t)devData->public.addr.phy,
+            devData->public.addr.size);
 
         return (-ENOMEM);
     }
+    ret = 0;
+#if (0u != CFG_DMA_MODE)
     devData->dma = kcalloc(
         devData->online,
         sizeof(struct dmaData),
@@ -167,7 +167,7 @@ static int32_t resRequest(
 
         return (-ENOMEM);
     }
-    ret = 0;
+
 
     for (cnt = 0u; cnt < devData->online; cnt++) {
         char            resName[DEF_DRV_NAME_LEN];
@@ -223,20 +223,23 @@ static int32_t resRequest(
         kfree(
             devData->dma);
     }
+#endif
 
     return (ret);
 }
 
 static void resRelease(
-    struct devData *    devData) {
+    struct privDevData *    devData) {
 
     iounmap(
-        devData->addr.remap);
+        devData->public.addr.remap);
     release_mem_region(
-        (resource_size_t)devData->addr.phy,
-        devData->addr.size);
+        (resource_size_t)devData->public.addr.phy,
+        devData->public.addr.size);
+#if (0u != CFG_DMA_MODE)
     kfree(
         devData->dma);
+#endif
 }
 
 /*===================================  GLOBAL PRIVATE FUNCTION DEFINITIONS  ==*/
@@ -249,7 +252,7 @@ int32_t portDevCreate(
 
     int32_t             ret;
     struct rtdm_device * dev_;
-    struct devData *    devData;
+    struct privDevData *    devData;
     struct omap_hwmod * hwmod;
     char                hwmodName[DEF_DRV_NAME_LEN];
 
@@ -260,7 +263,7 @@ int32_t portDevCreate(
 
         return (-ENOMEM);
     }
-    devData = kmalloc(sizeof(struct devData), GFP_KERNEL);                      /* Storage for PORT RT data                                 */
+    devData = kmalloc(sizeof(struct privDevData), GFP_KERNEL);                      /* Storage for PORT RT data                                 */
 
     if (NULL == devData) {
         LOG_DBG("failed to alloc memory for PORT RT data");
@@ -347,9 +350,9 @@ int32_t portDevCreate(
 void portDevDestroy(
     struct rtdm_device * dev) {
 
-    struct devData *    devData;
+    struct privDevData *    devData;
 
-    devData = getDevData(
+    devData = getPrivDevData(
         dev);
     pm_runtime_put_sync(&devData->pDev->dev);
     pm_runtime_disable(&devData->pDev->dev);
@@ -373,9 +376,9 @@ int32_t portDevEnable(
     struct rtdm_device * dev) {
 
     int                 retval;
-    struct devData *    devData;
+    struct privDevData *    devData;
 
-    devData = getDevData(
+    devData = getPrivDevData(
         dev);
     retval = pm_runtime_get_sync(&devData->pDev->dev);
 
@@ -386,9 +389,9 @@ int32_t portDevDisable(
     struct rtdm_device * dev) {
 
     int                 retval;
-    struct devData *    devData;
+    struct privDevData *    devData;
 
-    devData = getDevData(
+    devData = getPrivDevData(
         dev);
     retval = pm_runtime_put_sync(&devData->pDev->dev);
 
@@ -411,9 +414,9 @@ bool_T portChnIsOnline(
     struct rtdm_device * dev,
     uint32_t            chn) {
 
-    struct devData *    devData;
+    struct privDevData *    devData;
 
-    devData = getDevData(
+    devData = getPrivDevData(
         dev);
 
     if (chn < devData->online) {
@@ -423,17 +426,6 @@ bool_T portChnIsOnline(
 
         return (FALSE);
     }
-}
-
-volatile uint8_t * portRemapGet(
-    struct rtdm_device * dev) {
-
-    struct devData *    devData;
-
-    devData = getDevData(
-        dev);
-
-    return (devData->addr.remap);
 }
 
 /*================================*//** @cond *//*==  CONFIGURATION ERRORS  ==*/
