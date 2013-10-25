@@ -61,12 +61,52 @@ int32_t lldDevInit(
 void lldDevTerm(
     struct rtdm_device * dev);
 
+/**@brief       Returns IO remap address
+ * @param       dev
+ *              RT device descriptor
+ * @return      IO remap address
+ */
+volatile uint8_t * lldRemapGet(
+    struct rtdm_device * dev);
+
 /**@brief       Reset device module
  * @param       dev
  *              RT device descriptor
  */
 void lldDevReset(
     struct rtdm_device * dev);
+
+/**@brief       Enable FIFO on specified channel
+ * @param       dev
+ *              RT device descriptor
+ * @param       chn
+ *              Channel
+ */
+void lldFIFOChnEnable(
+    struct rtdm_device * dev,
+    uint32_t            chn);
+
+/**@brief       Disable FIFO on specified channel.
+ * @param       dev
+ *              RT device descriptor
+ * @param       chn
+ *              Channel
+ */
+void lldFIFOChnDisable(
+    struct rtdm_device * dev,
+    uint32_t            chn);
+
+/**@brief       Set CS mode
+ * @param       dev
+ *              RT device descriptor
+ * @param       chn
+ *
+ * @param mode
+ */
+void lldCsModeSet(
+    struct rtdm_device * dev,
+    int32_t             chn,
+    uint32_t            mode);
 
 /*--------------------------------------------------------  C++ extern end  --*/
 #ifdef __cplusplus
