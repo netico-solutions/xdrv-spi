@@ -45,10 +45,6 @@
  */
 #define CFG_MAX_DEVICES                 10u
 
-/**@brief       Maximum number of channels per device
- */
-#define CFG_MAX_CHN                     4u
-
 /*================================*//** @cond *//*==  CONFIGURATION ERRORS  ==*/
 /** @endcond *//** @} *//******************************************************
  * END of x_spi_cfg.h
