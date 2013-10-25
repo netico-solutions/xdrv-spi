@@ -44,6 +44,11 @@
 
 #define DEF_DEVCTX_SIGNATURE            0xdeadbeefu
 
+#define XSPI_ACTIVITY_NONE              0u
+
+#define IOC_ARG_IS_VALID(argv, min, max)                                        \
+    (((min) <= (argv)) && ((max) >= (argv)))
+
 /*======================================================  LOCAL DATA TYPES  ==*/
 /*=============================================  LOCAL FUNCTION PROTOTYPES  ==*/
 
@@ -138,41 +143,63 @@ static void unitCtxInit(
 
 }
 
-static void chnCtxInit(
-    struct chnCtx *     chnCtx) {
+static int32_t ctxInit(
+    struct rtdm_dev_context * ctx) {
 
-    chnCtx->online = FALSE;
+    struct devCtx *     devCtx;
+    uint32_t            i;
+    int32_t             ret;
+
+    ret = 0;
+    devCtx = getDevCtx(
+        ctx);
+
+    for (i = 0u; i < DEF_CHN_COUNT; i++) {
+        devCtx->chns[i] = NULL;
+
+        if (TRUE == portChnIsOnline(ctx->device, i)) {
+            struct chnCtx * chnCtx;
+
+            LOG_INFO("initializing channel: %d", i);
+
+            chnCtx = rtdm_malloc(
+                sizeof(struct chnCtx));
+
+            if (NULL == chnCtx) {
+                LOG_ERR("failed to build device context: %d, err: %d", i, ENOMEM);
+                ret = (int32_t)-ENOMEM;
+
+                break;
+            }
+            devCtx->chns[i] = chnCtx;
+        }
+    }
+    rtdm_lock_init(&devCtx->lock);
+    devCtx->chn         = XSPI_CHN_0;
+    devCtx->activity    = 0u;
+    devCtx->cache.fifo  = XSPI_FIFO_CHN_DISABLED;
+    ES_DBG_API_OBLIGATION(devCtx->signature = DEF_DEVCTX_SIGNATURE);
+
+    return (ret);
 }
 
-static void chnCtxOnlineSet(
-    struct chnCtx *     chnCtx,
-    bool_T              state) {
-
-    chnCtx->online = state;
-}
-
-static void ctxInit(
+static void ctxTerm(
     struct rtdm_dev_context * ctx) {
 
     struct devCtx *     devCtx;
     uint32_t            i;
 
-    devCtx = getDevCtx(ctx);
+    devCtx = getDevCtx(
+        ctx);
 
-    for (i = 0u; i < CFG_MAX_CHN; i++) {
-        chnCtxInit(
-            &devCtx->chns[i]);
+    for (i = 0u; i < DEF_CHN_COUNT; i++) {
 
-        if (TRUE == portChnIsOnline(ctx->device, i)) {
-            LOG_INFO("initializing channel: %d", i);
-            chnCtxOnlineSet(
-                &devCtx->chns[i],
-                TRUE);
+        if (NULL != devCtx->chns[i]) {
+            LOG_DBG("terminating channel: %d", i);
+            rtdm_free(
+                devCtx->chns[i]);
         }
     }
-    rtdm_lock_init(&devCtx->lock);
-    devCtx->chn = 0u;
-    ES_DBG_API_OBLIGATION(devCtx->signature = DEF_DEVCTX_SIGNATURE);
 }
 
 /******************************************************************************
@@ -220,9 +247,18 @@ static int handleIOctl(
         case XSPI_IOC_SET_CURRENT_CHN : {
             rtdm_lockctx_t  lockCtx;
 
-            if ((0 > (int)arg) || (CFG_MAX_CHN <= (int)arg)) {
+            LOG_DBG("IOC: Set the current channel being configured to %d", (int)arg);
 
-                return (-EINVAL);
+            if (!IOC_ARG_IS_VALID((int)arg, XSPI_CHN_0, XSPI_CHN_3)) {
+                retval = -EINVAL;
+
+                break;
+            }
+
+            if (FALSE == portChnIsOnline(ctx->device, (int)arg)) {
+                retval = -EIDRM;
+
+                break;
             }
             rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
             devCtx->chn = (uint32_t)arg;
@@ -233,14 +269,14 @@ static int handleIOctl(
 
 /*-- XSPI_IOC_GET_CURRENT_CHN ------------------------------------------------*/
         case XSPI_IOC_GET_CURRENT_CHN : {
-            int             retval;
+            LOG_DBG("IOC: Get the current channel being configured");
 
             if (NULL != usr) {
                 retval = rtdm_safe_copy_to_user(
                     usr,
                     arg,
                     &devCtx->chn,
-                    sizeof(uint32_t));
+                    sizeof(int));
             } else {
                 *(int *)arg = (int)devCtx->chn;
             }
@@ -248,8 +284,99 @@ static int handleIOctl(
             break;
         }
 
+/*-- XSPI_IOC_SET_FIFO_MODE --------------------------------------------------*/
         case XSPI_IOC_SET_FIFO_MODE : {
+            rtdm_lockctx_t  lockCtx;
 
+            LOG_DBG("IOC: Enable/disable FIFO mode on one channel %d", (int)arg);
+
+            if (!IOC_ARG_IS_VALID((int)arg, XSPI_FIFO_CHN_DISABLED, XSPI_FIFO_CHN_3)) {
+                retval = -EINVAL;
+
+                break;
+            }
+
+            if (XSPI_FIFO_CHN_DISABLED != (int)arg) {
+
+                if (FALSE == portChnIsOnline(ctx->device, (int)arg)) {
+                    retval = -EIDRM;
+
+                    break;
+                }
+            }
+            rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
+
+            if (XSPI_ACTIVITY_NONE != devCtx->activity) {
+                rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+                retval = -EAGAIN;
+
+                break;
+            }
+
+            if (XSPI_FIFO_CHN_DISABLED != devCtx->cache.fifo) {
+                lldFIFOChnDisable(
+                    ctx->device,
+                    devCtx->cache.fifo);
+            }
+            devCtx->cache.fifo = (int32_t)arg;
+
+            if (XSPI_FIFO_CHN_DISABLED != devCtx->cache.fifo) {
+                lldFIFOChnEnable(
+                    ctx->device,
+                    devCtx->cache.fifo);
+            }
+            rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+
+            break;
+        }
+
+/*-- XSPI_IOC_GET_FIFO_MODE --------------------------------------------------*/
+        case XSPI_IOC_GET_FIFO_MODE : {
+            LOG_DBG("IOC: Get which channel has FIFO enabled");
+
+            if (NULL != usr) {
+                retval = rtdm_safe_copy_to_user(
+                    usr,
+                    arg,
+                    &devCtx->cache.fifo,
+                    sizeof(int));
+            } else {
+                *(int *)arg = (int)devCtx->cache.fifo;
+            }
+
+            break;
+        }
+
+/*-- XSPI_IOC_SET_CS_MODE ----------------------------------------------------*/
+        case XSPI_IOC_SET_CS_MODE : {
+            rtdm_lockctx_t  lockCtx;
+
+            LOG_DBG("IOC: Set SPIEN (Chip-Select) mode");
+
+            if (!IOC_ARG_IS_VALID((int)arg, XSPI_CS_MODE_ENABLED, XSPI_CS_MODE_DISABLED)) {
+                retval = -EINVAL;
+
+                break;
+            }
+            rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
+
+            if (XSPI_ACTIVITY_NONE != devCtx->activity) {
+                rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+                retval = -EAGAIN;
+
+                break;
+            }
+            /*
+             * TODO
+             */
+            rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+
+            break;
+        }
+
+        default : {
+            LOG_DBG("IOC: unknown request (%d) received", req);
+            retval = -EINVAL;
         }
     }
 

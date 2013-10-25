@@ -3,20 +3,18 @@
  *
  * Copyright (C) 2011, 2012 - Nenad Radulovic
  *
- * x-spi is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * x-spi is free software; you can redistribute it and/or modify it under the
+ * terms of the GNU General Public License as published by the Free Software
+ * Foundation; either version 2 of the License, or (at your option) any later
+ * version.
  *
- * x-spi is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * x-spi is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with x-spi; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor,
- * Boston, MA  02110-1301  USA
+ * You should have received a copy of the GNU General Public License along with
+ * x-spi; if not, write to the Free Software Foundation, Inc., 51 Franklin St,
+ * Fifth Floor, Boston, MA  02110-1301  USA
  *
  * web site:    http://blueskynet.dyndns-server.com
  * e-mail  :    blueskyniss@gmail.com
@@ -47,6 +45,10 @@
 #define DEF_DRV_NAME_LEN                RTDM_MAX_DEVNAME_LEN
 #define DEF_DRV_SUPP_DEVICE             "xspi"
 
+/**@brief       Number of channels per device
+ */
+#define DEF_CHN_COUNT                   4u
+
 /*------------------------------------------------------  C++ extern begin  --*/
 #ifdef __cplusplus
 extern "C" {
@@ -54,15 +56,24 @@ extern "C" {
 
 /*============================================================  DATA TYPES  ==*/
 
+struct chnCtx {
+    struct unitCtx {
+
+    }                   tx, rx;
+    struct locChache {
+
+    }                   locCache;
+    bool_T              online;
+};
+
 struct devCtx {
     rtdm_lock_t         lock;
-    struct chnCtx {
-        struct unitCtx {
-
-        }                   tx, rx;
-        bool_T              online;
-    } chns[CFG_MAX_CHN];
+    struct cache {
+        int32_t             fifo;/* Channel number with FIFO enabled*/
+    }                   cache;
+    struct chnCtx *     chns[DEF_CHN_COUNT];
     uint32_t            chn;
+    uint32_t            activity;
 #if (1u == CFG_DBG_API_VALIDATION)
     portReg_T           signature;
 #endif
