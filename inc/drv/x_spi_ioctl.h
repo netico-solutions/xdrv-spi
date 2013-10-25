@@ -38,6 +38,13 @@
 
 #define XSPI_IOC_MAGIC                  1
 
+enum xspiChn {
+    XSPI_CHN_0                  = 0,
+    XSPI_CHN_1                  = 1,
+    XSPI_CHN_2                  = 2,
+    XSPI_CHN_3                  = 3
+};
+
 /**@brief       Set the current channel being configured
  * @details     0 - 3 channel
  */
@@ -47,13 +54,15 @@
  */
 #define XSPI_IOC_GET_CURRENT_CHN        _IOR(XSPI_IOC_MAGIC, 101, int)
 
-#define XSPI_FIFO_MODE_DISABLED         -1
-#define XSPI_FIFO_MODE_CHN_0            0
-#define XSPI_FIFO_MODE_CHN_1            1
-#define XSPI_FIFO_MODE_CHN_2            2
-#define XSPI_FIFO_MODE_CHN_3            3
+enum xspiFifoChn {
+    XSPI_FIFO_CHN_DISABLED      = -1,
+    XSPI_FIFO_CHN_0             = 0,
+    XSPI_FIFO_CHN_1             = 1,
+    XSPI_FIFO_CHN_2             = 2,
+    XSPI_FIFO_CHN_3             = 3
+};
 
-/**@brief       Enable/disable FIFO on ONE and only ONE channel
+/**@brief       Enable/disable FIFO mode on one channel
  * @details     -1 - disable FIFO
  *              0 - 3 channel with FIFO enabled
  */
@@ -63,10 +72,12 @@
  */
 #define XSPI_IOC_GET_FIFO_MODE          _IOR(XSPI_IOC_MAGIC, 102, int)
 
-#define XSPI_CS_MODE_ENABLED            0
-#define XSPI_CS_MODE_DISABLED           1
+enum xspiCsMode {
+    XSPI_CS_MODE_ENABLED        = 0,
+    XSPI_CS_MODE_DISABLED       = 1
+};
 
-/**@brief       Set SPIEN (Chip-Select) mode
+/**@brief       Set SPIEN (Chip-Select) global mode
  * @details     0 - SPIEN is used as a chip select
  *              1 - SPIEN is not used
  */
@@ -229,9 +240,13 @@
  * @brief       All IOC data/control is per channel
  * @{ *//*--------------------------------------------------------------------*/
 
-/**@brief       Get the status
+/**@brief       Get the device status
  */
 #define XSPI_IOC_GET_STATUS             _IOR(XSPI_IOC_MAGIC, 115, int)
+
+/**@brief       Get the channel status
+ */
+#define XSPI_IOC_GET_CHN_STATUS         _IOR(XSPI_IOC_MAGIC, 116, int)
 
 /**@} *//*--------------------------------------------------------------------*/
 
