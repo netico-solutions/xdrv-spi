@@ -36,6 +36,7 @@
 
 /*=========================================================  LOCAL MACRO's  ==*/
 
+/*-- Common registers bit definitions ----------------------------------------*/
 #define MCSPI_REVISION_X_MAJOR_Pos      (8u)
 #define MCSPI_REVISION_X_MAJOR_Mask     (0x03u << MCSPI_REVISION_X_MAJOR_Pos)
 #define MCSPI_REVISION_Y_MINOR_Pos      (0u)
@@ -44,6 +45,51 @@
 #define MCSPI_SYSCONFIG_SOFTRESET_Mask  (0x01u << MCSPI_SYSCONFIG_SOFTRESET_Pos)
 #define MCSPI_SYSSTATUS_RESETDONE_Pos   (0u)
 #define MCSPI_SYSSTATUS_RESETDONE_Mask  (0x01u << MCSPI_SYSSTATUS_RESETDONE_Pos)
+
+/*-- Channel registers bit definitions ---------------------------------------*/
+#define MCSPI_MODULCTRL_PIN32_Pos       (1u)
+#define MCSPI_MODULCTRL_PIN32_Mask      (0x01u << MCSPI_MODULCTRL_PIN32_Pos)
+
+#define MCSPI_CH_CONF_CLKG_Pos          (29u)
+#define MCSPI_CH_CONF_CLKG_Mask         (0x01u << MCSPI_CH_CONF_CLKG_Pos)
+#define MCSPI_CH_CONF_FFER_Pos          (28u)
+#define MCSPI_CH_CONF_FFER_Mask         (0x01u << MCSPI_CH_CONF_FFER_Pos)
+#define MCSPI_CH_CONF_FFEW_Pos          (27u)
+#define MCSPI_CH_CONF_FFEW_Mask         (0x01u << MCSPI_CH_CONF_FFEW_Pos)
+#define MCSPI_CH_CONF_TCS_Pos           (25u)
+#define MCSPI_CH_CONF_TCS_Mask          (0x03u << MCSPI_CH_CONF_TCS_Pos)
+#define MCSPI_CH_CONF_SBPOL_Pos         (24u)
+#define MCSPI_CH_CONF_SBPOL_Mask        (0x01u << MCSPI_CH_CONF_SBPOL_Pos)
+#define MCSPI_CH_CONF_SBE_Pos           (23u)
+#define MCSPI_CH_CONF_SBE_Mask          (0x01u << MCSPI_CH_CONF_SBE_Pos)
+#define MCSPI_CH_CONF_SPIENSLV_Pos      (21u)
+#define MCSPI_CH_CONF_SPIENSLV_Mask     (0x03u << MCSPI_CH_CONF_SPIENSLV_Pos)
+#define MCSPI_CH_CONF_FORCE_Pos         (20u)
+#define MCSPI_CH_CONF_FORCE_Mask        (0x01u << MCSPI_CH_CONF_FORCE_Pos)
+#define MCSPI_CH_CONF_TURBO_Pos         (19u)
+#define MCSPI_CH_CONF_TURBO_Mask        (0x01u << MCSPI_CH_CONF_TURBO_Pos)
+#define MCSPI_CH_CONF_IS_Pos            (18u)
+#define MCSPI_CH_CONF_IS_Mask           (0x01u << MCSPI_CH_CONF_IS_Pos)
+#define MCSPI_CH_CONF_DPE1_Pos          (17u)
+#define MCSPI_CH_CONF_DPE1_Mask         (0x01u << MCSPI_CH_CONF_DPE1_Pos)
+#define MCSPI_CH_CONF_DPE0_Pos          (16u)
+#define MCSPI_CH_CONF_DPE0_Mask         (0x01u << MCSPI_CH_CONF_DPE0_Pos)
+#define MCSPI_CH_CONF_DMAR_Pos          (15u)
+#define MCSPI_CH_CONF_DMAR_Mask         (0x01u << MCSPI_CH_CONF_DMAR_Pos)
+#define MCSPI_CH_CONF_DMAW_Pos          (14u)
+#define MCSPI_CH_CONF_DMAW_Mask         (0x01u << MCSPI_CH_CONF_DMAW_Pos)
+#define MCSPI_CH_CONF_TRM_Pos           (13u)
+#define MCSPI_CH_CONF_TRM_Mask          (0x01u << MCSPI_CH_CONF_TRM_Pos)
+#define MCSPI_CH_CONF_WL_Pos            (7u)
+#define MCSPI_CH_CONF_WL_Mask           (0x1fu << MCSPI_CH_CONF_WL_Pos)
+#define MCSPI_CH_CONF_EPOL_Pos          (6u)
+#define MCSPI_CH_CONF_EPOL_Mask         (0x01u << MCSPI_CH_CONF_EPOL_Pos)
+#define MCSPI_CH_CONF_CLKD_Pos          (2u)
+#define MCSPI_CH_CONF_CLKD_Mask         (0x0fu << MCSPI_CH_CONF_CLKD_Pos)
+#define MCSPI_CH_CONF_POL_Pos           (1u)
+#define MCSPI_CH_CONF_POL_Mask          (0x01u << MCSPI_CH_CONF_POL_Pos)
+#define MCSPI_CH_CONF_PHA_Pos           (0u)
+#define MCSPI_CH_CONF_PHA_Mask          (0x01u << MCSPI_CH_CONF_PHA_Pos)
 
 /*======================================================  LOCAL DATA TYPES  ==*/
 
@@ -89,6 +135,44 @@ static inline void regChnWrite(
 
 static inline uint32_t regChnRead(
     volatile uint8_t *  io,
+    uint32_t            chn,
+    enum mcspiChnRegs   reg);
+
+static struct devData * getDevData(
+    struct rtdm_device * dev);
+
+static int32_t shadowCreate(
+    struct rtdm_device * dev);
+
+static void shadowUpdate(
+    struct rtdm_device * dev);
+
+static inline void shadowWrite(
+    struct rtdm_device * dev,
+    enum mcspiRegs      reg,
+    uint32_t            val);
+
+static inline uint32_t shadowRead(
+    struct rtdm_device * dev,
+    enum mcspiRegs      reg);
+
+static inline uint32_t shadowReadUpdate(
+    struct rtdm_device * dev,
+    enum mcspiRegs      reg);
+
+static inline void shadowChnWrite(
+    struct rtdm_device * dev,
+    uint32_t            chn,
+    enum mcspiChnRegs   reg,
+    uint32_t            val);
+
+static inline uint32_t shadowChnRead(
+    struct rtdm_device * dev,
+    uint32_t            chn,
+    enum mcspiChnRegs   reg);
+
+static inline uint32_t shadowChnReadUpdate(
+    struct rtdm_device * dev,
     uint32_t            chn,
     enum mcspiChnRegs   reg);
 
@@ -143,29 +227,170 @@ static inline uint32_t regChnRead(
     return (ret);
 }
 
+static struct devData * getDevData(
+    struct rtdm_device * dev) {
+
+    return ((struct devData *)dev->device_data);
+}
+
+static int32_t shadowCreate(
+    struct rtdm_device * dev) {
+
+    struct devData *    devData;
+
+    devData = getDevData(
+        dev);
+    devData->shadow = kmalloc(
+        devData->addr.size,
+        GFP_KERNEL);
+
+    if (NULL == devData->shadow) {
+        LOG_DBG("failed to initialize local registry shadow, err: %d", ENOMEM);
+
+        return (-ENOMEM);
+    }
+    shadowUpdate(
+        dev);
+
+    return (0);
+}
+
+static void shadowUpdate(
+    struct rtdm_device * dev) {
+
+    struct devData *    devData;
+    volatile uint8_t *  io;
+
+    devData = getDevData(
+        dev);
+    io = lldRemapGet(
+        dev);
+    memcpy_fromio(
+        devData->shadow,
+        io,
+        devData->addr.size);
+}
+
+static inline void shadowWrite(
+    struct rtdm_device * dev,
+    enum mcspiRegs      reg,
+    uint32_t            val) {
+
+    volatile uint8_t *  io;
+    struct devData *    devData;
+
+    io = lldRemapGet(
+        dev);
+    devData = getDevData(
+        dev);
+    *((uint32_t *)&devData->shadow[reg]) = val;
+    regWrite(
+        io,
+        reg,
+        val);
+}
+
+static inline uint32_t shadowRead(
+    struct rtdm_device * dev,
+    enum mcspiRegs      reg) {
+
+    uint32_t            ret;
+    struct devData *    devData;
+
+    devData = getDevData(
+        dev);
+    ret = *((uint32_t *)&devData->shadow[reg]);
+    LOG_DBG("UART rd shadow: %x : %x", reg, ret);
+
+    return (ret);
+}
+
+static inline uint32_t shadowReadUpdate(
+    struct rtdm_device * dev,
+    enum mcspiRegs      reg) {
+
+    uint32_t            ret;
+    volatile uint8_t *  io;
+    struct devData *    devData;
+
+    io = lldRemapGet(
+        dev);
+    devData = getDevData(
+        dev);
+    ret = regRead(
+        io,
+        reg);
+    *((uint32_t *)&devData->shadow[reg]) = ret;
+
+    return (ret);
+}
+
+static inline void shadowChnWrite(
+    struct rtdm_device * dev,
+    uint32_t            chn,
+    enum mcspiChnRegs   reg,
+    uint32_t            val) {
+
+    shadowWrite(
+        dev,
+        MCSPI_CHANNEL_BASE + (chn * MCSPI_CHANNEL_SIZE) + reg,
+        val);
+}
+
+static inline uint32_t shadowChnRead(
+    struct rtdm_device * dev,
+    uint32_t            chn,
+    enum mcspiChnRegs   reg) {
+
+    uint32_t            ret;
+
+    ret = shadowRead(
+        dev,
+        MCSPI_CHANNEL_BASE + (chn * MCSPI_CHANNEL_SIZE) + reg);
+
+    return (ret);
+}
+
+static inline uint32_t shadowChnReadUpdate(
+    struct rtdm_device * dev,
+    uint32_t            chn,
+    enum mcspiChnRegs   reg) {
+
+    uint32_t            ret;
+
+    ret = shadowReadUpdate(
+        dev,
+        MCSPI_CHANNEL_BASE + (chn * MCSPI_CHANNEL_SIZE) + reg);
+
+    return (ret);
+}
+
 /*===================================  GLOBAL PRIVATE FUNCTION DEFINITIONS  ==*/
 /*====================================  GLOBAL PUBLIC FUNCTION DEFINITIONS  ==*/
 
 int32_t lldDevInit(
     struct rtdm_device * dev) {
 
-    volatile uint8_t *  io;
-    int32_t             retval;
+    int32_t             ret;
     uint32_t            revision;
 
-    io = portRemapGet(
+    ret = shadowCreate(
         dev);
-    revision = regRead(
-        io,
+
+    if (0 != ret) {
+
+        return (ret);
+    }
+    lldDevReset(
+        dev);
+    revision = shadowRead(
+        dev,
         MCSPI_REVISION);                                                        /* Read revision info                                       */
     LOG_INFO("hardware version: %d.%d",
         (revision & MCSPI_REVISION_X_MAJOR_Mask) >> MCSPI_REVISION_X_MAJOR_Pos,
         (revision & MCSPI_REVISION_Y_MINOR_Mask) >> MCSPI_REVISION_Y_MINOR_Pos);
-    lldDevReset(
-        dev);
-    retval = 0;
 
-    return (retval);
+    return (ret);
 }
 
 void lldDevTerm(
@@ -175,13 +400,24 @@ void lldDevTerm(
         dev);
 }
 
+volatile uint8_t * lldRemapGet(
+    struct rtdm_device * dev) {
+
+    struct devData *    devData;
+
+    devData = getDevData(
+        dev);
+
+    return (devData->addr.remap);
+}
+
 void lldDevReset(
     struct rtdm_device * dev) {
 
     volatile uint8_t *  io;
     uint32_t            sysconfig;
 
-    io = portRemapGet(
+    io = lldRemapGet(
         dev);
 
     sysconfig = regRead(
@@ -193,6 +429,66 @@ void lldDevReset(
         sysconfig | MCSPI_SYSCONFIG_SOFTRESET_Mask);                            /* Reset device module                                      */
 
     while (0u == (regRead(io, MCSPI_SYSSTATUS) & MCSPI_SYSSTATUS_RESETDONE_Mask));  /* Wait a few cycles for reset procedure                */
+    shadowUpdate(
+        dev);
+}
+
+void lldFIFOChnEnable(
+    struct rtdm_device * dev,
+    uint32_t            chn) {
+
+    uint32_t            reg;
+
+    ES_DBG_API_REQUIRE(ES_DBG_USAGE_FAILURE, TRUE == portChnIsOnline(dev, chn));
+
+    reg = shadowChnRead(
+        dev,
+        chn,
+        MCSPI_CH_CONF);
+    reg |= MCSPI_CH_CONF_FFER_Mask | MCSPI_CH_CONF_FFEW_Mask;
+    shadowChnWrite(
+        dev,
+        chn,
+        MCSPI_CH_CONF,
+        reg);
+}
+
+void lldFIFOChnDisable(
+    struct rtdm_device * dev,
+    uint32_t            chn) {
+
+    uint32_t            reg;
+
+    ES_DBG_API_REQUIRE(ES_DBG_USAGE_FAILURE, TRUE == portChnIsOnline(dev, chn));
+
+    reg = shadowChnRead(
+        dev,
+        chn,
+        MCSPI_CH_CONF);
+    reg &= ~(MCSPI_CH_CONF_FFER_Mask | MCSPI_CH_CONF_FFEW_Mask);
+    shadowChnWrite(
+        dev,
+        chn,
+        MCSPI_CH_CONF,
+        reg);
+}
+
+void lldCsModeSet(
+    struct rtdm_device * dev,
+    int32_t             chn,
+    uint32_t            mode) {
+
+    uint32_t            reg;
+
+    reg = shadowRead(
+        dev,
+        MCSPI_MODULCTRL);
+    reg &= ~MCSPI_MODULCTRL_PIN32_Mask;
+    reg |= mode & MCSPI_MODULCTRL_PIN32_Mask;
+    shadowWrite(
+        dev,
+        MCSPI_MODULCTRL,
+        reg);
 }
 
 /*================================*//** @cond *//*==  CONFIGURATION ERRORS  ==*/
