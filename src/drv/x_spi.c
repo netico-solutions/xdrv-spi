@@ -581,6 +581,8 @@ int __init moduleInit(
 
             if (0 != ret) {
                 LOG_ERR("failed to initialize device: %d, err: %d", i, -ret);
+                portDevDisable(
+                    dev);
                 portDevDestroy(
                     dev);
                 retval = (int)ret;
@@ -593,6 +595,8 @@ int __init moduleInit(
             if (0 != retval) {
                 LOG_ERR("failed to register device: %d, err: %d", i, -retval);
                 lldDevTerm(
+                    dev);
+                portDevDisable(
                     dev);
                 portDevDestroy(
                     dev);
