@@ -44,9 +44,11 @@
 
 #define DEF_DEVCTX_SIGNATURE            0xdeadbeefu
 
-#define XSPI_ACTIVITY_NONE              0u
+#define XSPI_ACTIVITY_IDLE              0u
+#define XSPI_ACTIVITY_RUNNIG               (!XSPI_ACTIVITY_IDLE)
+#define XSPI_ACTIVITY_ID(chn)           (0x01u << (chn))
 
-#define IOC_ARG_IS_VALID(argv, min, max)                                        \
+#define CFG_ARG_IS_VALID(argv, min, max)                                        \
     (((min) <= (argv)) && ((max) >= (argv)))
 
 /*======================================================  LOCAL DATA TYPES  ==*/
@@ -155,29 +157,14 @@ static int32_t ctxInit(
         ctx);
 
     for (i = 0u; i < DEF_CHN_COUNT; i++) {
-        devCtx->chns[i] = NULL;
+        devCtx->chn[i].online = FALSE;
 
         if (TRUE == portChnIsOnline(ctx->device, i)) {
-            struct chnCtx * chnCtx;
-
-            LOG_INFO("initializing channel: %d", i);
-
-            chnCtx = rtdm_malloc(
-                sizeof(struct chnCtx));
-
-            if (NULL == chnCtx) {
-                LOG_ERR("failed to build device context: %d, err: %d", i, ENOMEM);
-                ret = (int32_t)-ENOMEM;
-
-                break;
-            }
-            devCtx->chns[i] = chnCtx;
+            devCtx->chn[i].online = TRUE;
         }
     }
     rtdm_lock_init(&devCtx->lock);
-    devCtx->chn         = XSPI_CHN_0;
     devCtx->activity    = 0u;
-    devCtx->cache.fifo  = XSPI_FIFO_CHN_DISABLED;
     ES_DBG_API_OBLIGATION(devCtx->signature = DEF_DEVCTX_SIGNATURE);
 
     return (ret);
@@ -186,21 +173,623 @@ static int32_t ctxInit(
 static void ctxTerm(
     struct rtdm_dev_context * ctx) {
 
+}
+
+/* NOTE: rtdm_sem_down() requires to be called from preemptable code section,
+ *       therefore we must temporarily disable global locks. This function will
+ *       block if a configuration operation is ongoing.
+ */
+static void activitySetRunningI(
+    struct rtdm_dev_context * ctx,
+    rtdm_lockctx_t *    lockCtx) {
+
     struct devCtx *     devCtx;
-    uint32_t            i;
+
+    devCtx = getDevCtx(
+        ctx);
+    devCtx->activity++;
+
+    if (1u == devCtx->activity) {
+        rtdm_lock_put_irqrestore(&devCtx->lock, *lockCtx);
+        rtdm_sem_down(
+            &devCtx->idleLock);
+        rtdm_lock_get_irqsave(&devCtx->lock, *lockCtx);
+    }
+}
+
+static void activitySetIdleI(
+    struct rtdm_dev_context * ctx) {
+
+    struct devCtx *     devCtx;
+
+    devCtx = getDevCtx(
+        ctx);
+    devCtx->activity--;
+
+    if (0u == devCtx->activity) {
+        rtdm_sem_up(
+            &devCtx->idleLock);
+    }
+}
+
+/*
+ * TODO: Nešto što će da čeka na slobodne resurse
+ */
+
+static int32_t cfgApply(
+    struct rtdm_dev_context * ctx) {
+
+    struct devCtx *     devCtx;
+
+    devCtx = getDevCtx(
+        ctx);
+    lldReset(ctx->device);
+    lldModeSet(ctx->device, devCtx->cfg.mode);
+
+    return (0);
+}
+
+static int32_t cfgChnSet(
+    struct rtdm_dev_context * ctx,
+    enum xspiChn        chn) {
+
+    struct devCtx *     devCtx;
+    rtdm_lockctx_t      lockCtx;
+
+    LOG_DBG("CFG: set current channel to %d", chn);
+
+    if (!CFG_ARG_IS_VALID(chn, XSPI_CHN_0, XSPI_CHN_3)) {
+
+        return (-EINVAL);
+    }
+
+    if (FALSE == portChnIsOnline(ctx->device, chn)) {
+
+        return (-EIDRM);
+    }
+    devCtx = getDevCtx(
+        ctx);
+    rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
+    devCtx->cfg.chn = chn;
+    rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+
+    return (0);
+}
+
+static void cfgChnGet(
+    struct rtdm_dev_context * ctx,
+    enum xspiChn *      chn) {
+
+    struct devCtx *     devCtx;
+
+    devCtx = getDevCtx(
+        ctx);
+    *chn = devCtx->cfg.chn;
+
+    LOG_DBG("CFG: current channel is %d", devCtx->cfg.chn);
+}
+
+static int32_t cfgFIFOChnSet(
+    struct rtdm_dev_context * ctx,
+    enum xspiFifoChn    chn) {
+
+    struct devCtx *     devCtx;
+    rtdm_lockctx_t      lockCtx;
+
+    LOG_DBG("CFG: set FIFO channel to %d", chn);
+
+    if (!CFG_ARG_IS_VALID(chn, XSPI_FIFO_CHN_DISABLED, XSPI_FIFO_CHN_3)) {
+
+        return (-EINVAL);
+    }
+
+    if (XSPI_FIFO_CHN_DISABLED != chn) {
+
+        if (FALSE == portChnIsOnline(ctx->device, (enum xspiChn)chn)) {
+
+            return (-EIDRM);
+        }
+    }
+    devCtx = getDevCtx(
+        ctx);
+    rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
+
+    if (XSPI_ACTIVITY_RUNNIG == devCtx->activity) {
+        rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+
+        return (-EAGAIN);
+    }
+
+    if (XSPI_FIFO_CHN_DISABLED != devCtx->cfg.fifoChn) {
+        lldFIFOChnDisable(
+            ctx->device,
+            devCtx->cfg.fifoChn);
+    }
+    devCtx->cfg.fifoChn = chn;
+
+    if (XSPI_FIFO_CHN_DISABLED != devCtx->cfg.fifoChn) {
+        lldFIFOChnEnable(
+            ctx->device,
+            devCtx->cfg.fifoChn);
+    }
+    rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+
+    return (0);
+}
+
+static void cfgFIFOChnGet(
+    struct rtdm_dev_context * ctx,
+    enum xspiFifoChn *  chn) {
+
+    struct devCtx *     devCtx;
 
     devCtx = getDevCtx(
         ctx);
 
-    for (i = 0u; i < DEF_CHN_COUNT; i++) {
+    LOG_DBG("CFG: FIFO channel is %d", devCtx->cfg.fifoChn);
 
-        if (NULL != devCtx->chns[i]) {
-            LOG_DBG("terminating channel: %d", i);
-            rtdm_free(
-                devCtx->chns[i]);
-        }
-    }
+    *chn = devCtx->cfg.fifoChn;
 }
+
+static int32_t cfgCsModeSet(
+    struct rtdm_dev_context * ctx,
+    enum xspiCsMode     csMode) {
+
+    struct devCtx *     devCtx;
+    rtdm_lockctx_t      lockCtx;
+
+    LOG_DBG("CFG: set CS mode to %d", csMode);
+
+    if (!CFG_ARG_IS_VALID(csMode, XSPI_CS_MODE_ENABLED, XSPI_CS_MODE_DISABLED)) {
+
+        return (-EINVAL);
+    }
+    devCtx = getDevCtx(
+        ctx);
+    rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
+
+    if (XSPI_ACTIVITY_RUNNIG == devCtx->activity) {
+        rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+
+        return (-EAGAIN);
+    }
+    devCtx->cfg.csMode = csMode;
+    lldCsModeSet(
+        ctx->device,
+        (int32_t)csMode);
+    rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+
+    return (0);
+}
+
+static void cfgCsModeGet(
+    struct rtdm_dev_context * ctx,
+    enum xspiCsMode *   csMode) {
+
+    struct devCtx *     devCtx;
+
+    devCtx = getDevCtx(
+        ctx);
+
+    LOG_DBG("CFG: CS mode is %d", devCtx->cfg.csMode);
+
+    *csMode = devCtx->cfg.csMode;
+}
+
+static int32_t cfgModeSet(
+    struct rtdm_dev_context * ctx,
+    enum xspiMode       mode) {
+
+    struct devCtx *     devCtx;
+    rtdm_lockctx_t      lockCtx;
+
+    LOG_DBG("CFG: set SPI mode to %d", mode);
+
+    if (!CFG_ARG_IS_VALID(mode, XSPI_MODE_MASTER, XSPI_MODE_SLAVE)) {
+
+        return (-EINVAL);
+    }
+    devCtx = getDevCtx(
+        ctx);
+    rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
+
+    if (XSPI_ACTIVITY_RUNNIG == devCtx->activity) {
+        rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+
+        return (-EAGAIN);
+    }
+    devCtx->cfg.mode = mode;
+    cfgApply(
+        ctx);
+    rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+
+    return (0);
+}
+
+static void cfgModeGet(
+    struct rtdm_dev_context * ctx,
+    enum xspiMode *     mode) {
+
+    struct devCtx *     devCtx;
+
+    devCtx = getDevCtx(
+        ctx);
+
+    LOG_DBG("CFG: CS mode is %d", devCtx->cfg.csMode);
+
+    *mode = devCtx->cfg.csMode;
+}
+
+static int32_t cfgChannelModeSet(
+    struct rtdm_dev_context * ctx,
+    enum xspiChannelMode channelMode) {
+
+    struct devCtx *     devCtx;
+    rtdm_lockctx_t      lockCtx;
+
+    LOG_DBG("CFG: set initial delay to %d", channelMode);
+
+    if (!CFG_ARG_IS_VALID(channelMode, XSPI_CHANNEL_MODE_MULTI, XSPI_CHANNEL_MODE_SINGLE)) {
+
+        return (-EINVAL);
+    }
+    devCtx = getDevCtx(
+        ctx);
+    rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
+
+    if (XSPI_ACTIVITY_RUNNIG == devCtx->activity) {
+        rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+
+        return (-EAGAIN);
+    }
+    devCtx->cfg.delay = channelMode;
+    lldChannelModeSet(
+        ctx->device,
+        (uint32_t)channelMode);
+    rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+
+    return (0);
+}
+
+static void cfgChannelModeGet(
+    struct rtdm_dev_context * ctx,
+    enum xspiChannelMode * channelMode) {
+
+    struct devCtx *     devCtx;
+
+    devCtx = getDevCtx(
+        ctx);
+
+    LOG_DBG("CFG: channel mode is %d", devCtx->cfg.channelMode);
+
+    *channelMode = devCtx->cfg.channelMode;
+}
+
+static int32_t cfgInitialDelaySet(
+    struct rtdm_dev_context * ctx,
+    enum xspiInitialDelay delay) {
+
+    struct devCtx *     devCtx;
+    rtdm_lockctx_t      lockCtx;
+
+    LOG_DBG("CFG: set initial delay to %d", delay);
+
+    if (!CFG_ARG_IS_VALID(delay, XSPI_INITIAL_DELAY_0, XSPI_INITIAL_DELAY_32)) {
+
+        return (-EINVAL);
+    }
+    devCtx = getDevCtx(
+        ctx);
+    rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
+
+    if (XSPI_ACTIVITY_RUNNIG == devCtx->activity) {
+        rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+
+        return (-EAGAIN);
+    }
+    devCtx->cfg.delay = delay;
+    lldInitialDelaySet(
+        ctx->device,
+        (uint32_t)delay);
+    rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+
+    return (0);
+}
+
+static void cfgInitialDelayGet(
+    struct rtdm_dev_context * ctx,
+    enum xspiInitialDelay * delay) {
+
+    struct devCtx *     devCtx;
+
+    devCtx = getDevCtx(
+        ctx);
+
+    LOG_DBG("CFG: initial delay is %d", devCtx->cfg.delay);
+
+    *delay = devCtx->cfg.delay;
+}
+
+static int32_t cfgChnTransferModeSet(
+    struct rtdm_dev_context * ctx,
+    enum xspiTransferMode transferMode) {
+
+    struct devCtx *     devCtx;
+    rtdm_lockctx_t      lockCtx;
+
+    LOG_DBG("CFG: set transfer mode to %d", transferMode);
+
+    if (!CFG_ARG_IS_VALID(transferMode, XSPI_TRANSFER_MODE_TX_AND_RX, XSPI_TRANSFER_MODE_TX_ONLY)) {
+
+        return (-EINVAL);
+    }
+    devCtx = getDevCtx(
+        ctx);
+    rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
+
+    if (XSPI_ACTIVITY_RUNNIG == devCtx->activity) {
+        rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+
+        return (-EAGAIN);
+    }
+    devCtx->chn[devCtx->cfg.chn].cfg.transferMode = transferMode;
+    lldChnTransferModeSet(
+        ctx->device,
+        devCtx->cfg.chn,
+        (uint32_t)transferMode);
+    rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+
+    return (0);
+}
+
+static void cfgChnTransferModeGet(
+    struct rtdm_dev_context * ctx,
+    enum xspiTransferMode * transferMode) {
+
+    struct devCtx *     devCtx;
+
+    devCtx = getDevCtx(
+        ctx);
+
+    LOG_DBG("CFG: transfer mode is %d", devCtx->chn[devCtx->cfg.chn].cfg.transferMode);
+
+    *transferMode = devCtx->chn[devCtx->cfg.chn].cfg.transferMode;
+}
+
+static int32_t cfgChnPinLayoutSet(
+    struct rtdm_dev_context * ctx,
+    enum xspiPinLayout  pinLayout) {
+
+    struct devCtx *     devCtx;
+    rtdm_lockctx_t      lockCtx;
+
+    LOG_DBG("CFG: set pin layout to %d", pinLayout);
+
+    if (!CFG_ARG_IS_VALID(pinLayout, XSPI_PIN_LAYOUT_TX_RX, XSPI_PIN_LAYOUT_RX_TX)) {
+
+        return (-EINVAL);
+    }
+    devCtx = getDevCtx(
+        ctx);
+    rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
+
+    if (XSPI_ACTIVITY_RUNNIG == devCtx->activity) {
+        rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+
+        return (-EAGAIN);
+    }
+    devCtx->chn[devCtx->cfg.chn].cfg.pinLayout = pinLayout;
+    lldChnPinLayoutSet(
+        ctx->device,
+        devCtx->cfg.chn,
+        (uint32_t)pinLayout);
+    rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+
+    return (0);
+}
+
+static void cfgChnPinLayoutGet(
+    struct rtdm_dev_context * ctx,
+    enum xspiPinLayout * pinLayout) {
+
+    struct devCtx *     devCtx;
+
+    devCtx = getDevCtx(
+        ctx);
+
+    LOG_DBG("CFG: pin layout is %d", devCtx->chn[devCtx->cfg.chn].cfg.pinLayout);
+
+    *pinLayout = devCtx->chn[devCtx->cfg.chn].cfg.pinLayout;
+}
+
+static int32_t cfgChnWordLengthSet(
+    struct rtdm_dev_context * ctx,
+    uint32_t            length) {
+
+    struct devCtx *     devCtx;
+    rtdm_lockctx_t      lockCtx;
+
+    LOG_DBG("CFG: set word length to %d", length);
+
+    if (!CFG_ARG_IS_VALID(length, 4u, 32u)) {
+
+        return (-EINVAL);
+    }
+    devCtx = getDevCtx(
+        ctx);
+    rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
+
+    if (XSPI_ACTIVITY_RUNNIG == devCtx->activity) {
+        rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+
+        return (-EAGAIN);
+    }
+    devCtx->chn[devCtx->cfg.chn].cfg.wordLength = length;
+    lldChnCsDelaySet(
+        ctx->device,
+        devCtx->cfg.chn,
+        (uint32_t)length);
+    rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+
+    return (0);
+}
+
+static void cfgChnWordLengthGet(
+    struct rtdm_dev_context * ctx,
+    uint32_t *          length) {
+
+    struct devCtx *     devCtx;
+
+    devCtx = getDevCtx(
+        ctx);
+
+    LOG_DBG("CFG: word length is %d", devCtx->chn[devCtx->cfg.chn].cfg.wordLength);
+
+    *length = devCtx->chn[devCtx->cfg.chn].cfg.wordLength;
+}
+
+static int32_t cfgChnCsDelaySet(
+    struct rtdm_dev_context * ctx,
+    enum xspiCsDelay    delay) {
+
+    struct devCtx *     devCtx;
+    rtdm_lockctx_t      lockCtx;
+
+    LOG_DBG("CFG: set CS delay to %d", delay);
+
+    if (!CFG_ARG_IS_VALID(delay, XSPI_CS_DELAY_0_5, XSPI_CS_DELAY_3_5)) {
+
+        return (-EINVAL);
+    }
+    devCtx = getDevCtx(
+        ctx);
+    rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
+
+    if (XSPI_ACTIVITY_RUNNIG == devCtx->activity) {
+        rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+
+        return (-EAGAIN);
+    }
+    devCtx->chn[devCtx->cfg.chn].cfg.csDelay = delay;
+    lldChnCsDelaySet(
+        ctx->device,
+        devCtx->cfg.chn,
+        (uint32_t)delay);
+    rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+
+    return (0);
+}
+
+static void cfgChnCsDelayGet(
+    struct rtdm_dev_context * ctx,
+    enum xspiCsDelay *  delay) {
+
+    struct devCtx *     devCtx;
+
+    devCtx = getDevCtx(
+        ctx);
+
+    LOG_DBG("CFG: CS delay is %d", devCtx->chn[devCtx->cfg.chn].cfg.csDelay);
+
+    *delay = devCtx->chn[devCtx->cfg.chn].cfg.csDelay;
+}
+
+static int32_t cfgChnCsPolaritySet(
+    struct rtdm_dev_context * ctx,
+    enum xspiCsPolarity csPolarity) {
+
+    struct devCtx *     devCtx;
+    rtdm_lockctx_t      lockCtx;
+
+    LOG_DBG("CFG: set CS polarity to %d", csPolarity);
+
+    if (!CFG_ARG_IS_VALID(csPolarity, XSPI_CS_POLARITY_ACTIVE_HIGH, XSPI_CS_POLAROTY_ACTIVE_LOW)) {
+
+        return (-EINVAL);
+    }
+    devCtx = getDevCtx(
+        ctx);
+    rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
+
+    if (XSPI_ACTIVITY_RUNNIG == devCtx->activity) {
+        rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+
+        return (-EAGAIN);
+    }
+    devCtx->chn[devCtx->cfg.chn].cfg.wordLength = csPolarity;
+    lldChnCsPolaritySet(
+        ctx->device,
+        devCtx->cfg.chn,
+        (uint32_t)csPolarity);
+    rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+
+    return (0);
+}
+
+static void cfgChnCsPolarityGet(
+    struct rtdm_dev_context * ctx,
+    enum xspiCsPolarity * csPolarity) {
+
+    struct devCtx *     devCtx;
+
+    devCtx = getDevCtx(
+        ctx);
+
+    LOG_DBG("CFG: CS polarity is %d", devCtx->chn[devCtx->cfg.chn].cfg.csPolarity);
+
+    *csPolarity =  devCtx->chn[devCtx->cfg.chn].cfg.csPolarity;
+}
+
+static int32_t cfgChnCsStateSet(
+    struct rtdm_dev_context * ctx,
+    enum xspiCsState    state) {
+
+    struct devCtx *     devCtx;
+    rtdm_lockctx_t      lockCtx;
+    int32_t             ret;
+
+    LOG_DBG("CFG: set CS state to %d", state);
+
+    if (!CFG_ARG_IS_VALID(state, XSPI_CS_STATE_INACTIVE, XSPI_CS_STATE_ACTIVE)) {
+
+        return (-EINVAL);
+    }
+    devCtx = getDevCtx(
+        ctx);
+    rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
+
+    if (XSPI_ACTIVITY_RUNNIG == devCtx->activity) {
+        rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+
+        return (-EAGAIN);
+    }
+    devCtx->chn[devCtx->cfg.chn].cfg.csState = state;
+    ret = lldChnCsStateSet(
+        ctx->device,
+        devCtx->cfg.chn,
+        (uint32_t)state);
+    rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+
+    return (ret);
+}
+
+static void cfgChnCsStateGet(
+    struct rtdm_dev_context * ctx,
+    enum xspiCsState *  state) {
+
+    struct devCtx *     devCtx;
+
+    devCtx = getDevCtx(
+        ctx);
+
+    LOG_DBG("CFG: CS state is %d", devCtx->chn[devCtx->cfg.chn].cfg.csState);
+
+    *state = devCtx->chn[devCtx->cfg.chn].cfg.csState;
+}
+
+/*
+ * Rest
+ */
 
 /******************************************************************************
  * DMA MODE 0
@@ -237,111 +826,65 @@ static int handleIOctl(
     void __user *       arg) {
 
     int                 retval;
-    struct devCtx *     devCtx;
 
-    devCtx = getDevCtx(ctx);
     retval = 0;
 
     switch (req) {
 /*-- XSPI_IOC_SET_CURRENT_CHN ------------------------------------------------*/
         case XSPI_IOC_SET_CURRENT_CHN : {
-            rtdm_lockctx_t  lockCtx;
-
-            LOG_DBG("IOC: Set the current channel being configured to %d", (int)arg);
-
-            if (!IOC_ARG_IS_VALID((int)arg, XSPI_CHN_0, XSPI_CHN_3)) {
-                retval = -EINVAL;
-
-                break;
-            }
-
-            if (FALSE == portChnIsOnline(ctx->device, (int)arg)) {
-                retval = -EIDRM;
-
-                break;
-            }
-            rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
-            devCtx->chn = (uint32_t)arg;
-            rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+            retval = (int)cfgChnSet(
+                ctx,
+                (enum xspiChn)arg);
 
             break;
         }
 
 /*-- XSPI_IOC_GET_CURRENT_CHN ------------------------------------------------*/
         case XSPI_IOC_GET_CURRENT_CHN : {
-            LOG_DBG("IOC: Get the current channel being configured");
+            enum xspiChn chn;
+
+            cfgChnGet(
+                ctx,
+                &chn);
 
             if (NULL != usr) {
                 retval = rtdm_safe_copy_to_user(
                     usr,
                     arg,
-                    &devCtx->chn,
+                    &chn,
                     sizeof(int));
             } else {
-                *(int *)arg = (int)devCtx->chn;
+                *(int *)arg = (int)chn;
             }
 
             break;
         }
 
 /*-- XSPI_IOC_SET_FIFO_MODE --------------------------------------------------*/
-        case XSPI_IOC_SET_FIFO_MODE : {
-            rtdm_lockctx_t  lockCtx;
-
-            LOG_DBG("IOC: Enable/disable FIFO mode on one channel %d", (int)arg);
-
-            if (!IOC_ARG_IS_VALID((int)arg, XSPI_FIFO_CHN_DISABLED, XSPI_FIFO_CHN_3)) {
-                retval = -EINVAL;
-
-                break;
-            }
-
-            if (XSPI_FIFO_CHN_DISABLED != (int)arg) {
-
-                if (FALSE == portChnIsOnline(ctx->device, (int)arg)) {
-                    retval = -EIDRM;
-
-                    break;
-                }
-            }
-            rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
-
-            if (XSPI_ACTIVITY_NONE != devCtx->activity) {
-                rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
-                retval = -EAGAIN;
-
-                break;
-            }
-
-            if (XSPI_FIFO_CHN_DISABLED != devCtx->cache.fifo) {
-                lldFIFOChnDisable(
-                    ctx->device,
-                    devCtx->cache.fifo);
-            }
-            devCtx->cache.fifo = (int32_t)arg;
-
-            if (XSPI_FIFO_CHN_DISABLED != devCtx->cache.fifo) {
-                lldFIFOChnEnable(
-                    ctx->device,
-                    devCtx->cache.fifo);
-            }
-            rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+        case XSPI_IOC_SET_FIFO_CHN : {
+            retval = (int)cfgFIFOChnSet(
+                ctx,
+                (enum xspiFifoChn)arg);
 
             break;
         }
 
 /*-- XSPI_IOC_GET_FIFO_MODE --------------------------------------------------*/
-        case XSPI_IOC_GET_FIFO_MODE : {
-            LOG_DBG("IOC: Get which channel has FIFO enabled");
+        case XSPI_IOC_GET_FIFO_CHN : {
+            enum xspiFifoChn fifoChn;
+
+            cfgFIFOChnGet(
+                ctx,
+                &fifoChn);
 
             if (NULL != usr) {
                 retval = rtdm_safe_copy_to_user(
                     usr,
                     arg,
-                    &devCtx->cache.fifo,
+                    &fifoChn,
                     sizeof(int));
             } else {
-                *(int *)arg = (int)devCtx->cache.fifo;
+                *(int *)arg = (int)fifoChn;
             }
 
             break;
@@ -349,35 +892,323 @@ static int handleIOctl(
 
 /*-- XSPI_IOC_SET_CS_MODE ----------------------------------------------------*/
         case XSPI_IOC_SET_CS_MODE : {
-            rtdm_lockctx_t  lockCtx;
-
-            LOG_DBG("IOC: Set SPIEN (Chip-Select) mode");
-
-            if (!IOC_ARG_IS_VALID((int)arg, XSPI_CS_MODE_ENABLED, XSPI_CS_MODE_DISABLED)) {
-                retval = -EINVAL;
-
-                break;
-            }
-            rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
-
-            if (XSPI_ACTIVITY_NONE != devCtx->activity) {
-                rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
-                retval = -EAGAIN;
-
-                break;
-            }
-            /*
-             * TODO
-             */
-            rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+            retval = (int)cfgCsModeSet(
+                ctx,
+                (enum xspiCsMode)arg);
 
             break;
         }
 
+/*-- XSPI_IOC_GET_CS_MODE ----------------------------------------------------*/
+        case XSPI_IOC_GET_CS_MODE : {
+            enum xspiCsMode csMode;
+
+            cfgCsModeGet(
+                ctx,
+                &csMode);
+
+            if (NULL != usr) {
+                retval = rtdm_safe_copy_to_user(
+                    usr,
+                    arg,
+                    &csMode,
+                    sizeof(int));
+            } else {
+                *(int *)arg = (int)csMode;
+            }
+
+            break;
+        }
+
+/*-- XSPI_IOC_SET_MODE -------------------------------------------------------*/
+        case XSPI_IOC_SET_MODE : {
+            retval = (int)cfgModeSet(
+                ctx,
+                (enum xspiMode)arg);
+
+            break;
+        }
+
+/*-- XSPI_IOC_GET_MODE -------------------------------------------------------*/
+        case XSPI_IOC_GET_MODE : {
+            enum xspiMode mode;
+
+            cfgModeGet(
+                ctx,
+                &mode);
+
+            if (NULL != usr) {
+                retval = rtdm_safe_copy_to_user(
+                    usr,
+                    arg,
+                    &mode,
+                    sizeof(int));
+            } else {
+                *(int *)arg = (int)mode;
+            }
+
+            break;
+        }
+
+/*-- XSPI_IOC_SET_CHANNEL_MODE -----------------------------------------------*/
+        case XSPI_IOC_SET_CHANNEL_MODE : {
+            retval = (int)cfgChannelModeSet(
+                ctx,
+                (enum xspiChannelMode)arg);
+
+            break;
+        }
+
+/*-- XSPI_IOC_GET_CHANNEL_MODE -----------------------------------------------*/
+        case XSPI_IOC_GET_CHANNEL_MODE : {
+            enum xspiChannelMode channelMode;
+
+            cfgChannelModeGet(
+                ctx,
+                &channelMode);
+
+            if (NULL != usr) {
+                retval = rtdm_safe_copy_to_user(
+                    usr,
+                    arg,
+                    &channelMode,
+                    sizeof(int));
+            } else {
+                *(int *)arg = (int)channelMode;
+            }
+
+            break;
+        }
+
+/*-- XSPI_IOC_SET_INITIAL_DELAY ----------------------------------------------*/
+        case XSPI_IOC_SET_INITIAL_DELAY : {
+            retval = (int)cfgInitialDelaySet(
+                ctx,
+                (enum xspiInitialDelay)arg);
+
+            break;
+        }
+
+/*-- XSPI_IOC_GET_INITIAL_DELAY ----------------------------------------------*/
+        case XSPI_IOC_GET_INITIAL_DELAY : {
+            enum xspiInitialDelay initialDelay;
+
+            cfgInitialDelayGet(
+                ctx,
+                &initialDelay);
+
+            if (NULL != usr) {
+                retval = rtdm_safe_copy_to_user(
+                    usr,
+                    arg,
+                    &initialDelay,
+                    sizeof(int));
+            } else {
+                *(int *)arg = (int)initialDelay;
+            }
+
+            break;
+        }
+
+/*-- XSPI_IOC_SET_TRANSFER_MODE ----------------------------------------------*/
+        case XSPI_IOC_SET_TRANSFER_MODE : {
+            retval = (int)cfgChnTransferModeSet(
+                ctx,
+                (enum xspiTransferMode)arg);
+
+            break;
+        }
+
+/*-- XSPI_IOC_GET_TRANSFER_MODE ----------------------------------------------*/
+        case XSPI_IOC_GET_TRANSFER_MODE : {
+            enum xspiTransferMode transferMode;
+
+            cfgChnTransferModeGet(
+                ctx,
+                &transferMode);
+
+            if (NULL != usr) {
+                retval = rtdm_safe_copy_to_user(
+                    usr,
+                    arg,
+                    &transferMode,
+                    sizeof(int));
+            } else {
+                *(int *)arg = (int)transferMode;
+            }
+
+            break;
+        }
+
+/*-- XSPI_IOC_SET_PIN_LAYOUT -------------------------------------------------*/
+        case XSPI_IOC_SET_PIN_LAYOUT : {
+            retval = (int)cfgChnPinLayoutSet(
+                ctx,
+                (enum xspiPinLayout)arg);
+
+            break;
+        }
+
+/*-- XSPI_IOC_GET_PIN_LAYOUT -------------------------------------------------*/
+        case XSPI_IOC_GET_PIN_LAYOUT : {
+            enum xspiPinLayout pinLayout;
+
+            cfgChnPinLayoutGet(
+                ctx,
+                &pinLayout);
+
+            if (NULL != usr) {
+                retval = rtdm_safe_copy_to_user(
+                    usr,
+                    arg,
+                    &pinLayout,
+                    sizeof(int));
+            } else {
+                *(int *)arg = (int)pinLayout;
+            }
+
+            break;
+        }
+
+/*-- XSPI_IOC_SET_WORD_LENGTH ------------------------------------------------*/
+        case XSPI_IOC_SET_WORD_LENGTH : {
+            retval = (int)cfgChnWordLengthSet(
+                ctx,
+                (uint32_t)arg);
+
+            break;
+        }
+
+/*-- XSPI_IOC_GET_WORD_LENGTH ------------------------------------------------*/
+        case XSPI_IOC_GET_WORD_LENGTH : {
+            uint32_t    wordLength;
+
+            cfgChnWordLengthGet(
+                ctx,
+                &wordLength);
+
+            if (NULL != usr) {
+                retval = rtdm_safe_copy_to_user(
+                    usr,
+                    arg,
+                    &wordLength,
+                    sizeof(int));
+            } else {
+                *(int *)arg = (int)wordLength;
+            }
+
+            break;
+        }
+
+/*-- XSPI_IOC_SET_CS_DELAY ---------------------------------------------------*/
+        case XSPI_IOC_SET_CS_DELAY : {
+            retval = (int)cfgChnCsDelaySet(
+                ctx,
+                (enum xspiCsDelay)arg);
+
+            break;
+        }
+
+/*-- XSPI_IOC_GET_CS_DELAY ---------------------------------------------------*/
+        case XSPI_IOC_GET_CS_DELAY : {
+            enum xspiCsDelay csDelay;
+
+            cfgChnCsDelayGet(
+                ctx,
+                &csDelay);
+
+            if (NULL != usr) {
+                retval = rtdm_safe_copy_to_user(
+                    usr,
+                    arg,
+                    &csDelay,
+                    sizeof(int));
+            } else {
+                *(int *)arg = (int)csDelay;
+            }
+
+            break;
+        }
+
+/*-- XSPI_IOC_SET_CS_POLARITY ------------------------------------------------*/
+        case XSPI_IOC_SET_CS_POLARITY : {
+            retval = (int)cfgChnCsPolaritySet(
+                ctx,
+                (enum xspiCsPolarity)arg);
+
+            break;
+        }
+
+/*-- XSPI_IOC_GET_CS_POLARITY ------------------------------------------------*/
+        case XSPI_IOC_GET_CS_POLARITY : {
+            enum xspiCsPolarity csPolarity;
+
+            cfgChnCsPolarityGet(
+                ctx,
+                &csPolarity);
+
+            if (NULL != usr) {
+                retval = rtdm_safe_copy_to_user(
+                    usr,
+                    arg,
+                    &csPolarity,
+                    sizeof(int));
+            } else {
+                *(int *)arg = (int)csPolarity;
+            }
+
+            break;
+        }
+
+/*-- XSPI_IOC_SET_CS_STATE ---------------------------------------------------*/
+        case XSPI_IOC_SET_CS_STATE : {
+            retval = (int)cfgChnCsStateSet(
+                ctx,
+                (enum xspiCsState)arg);
+
+            break;
+        }
+
+/*-- XSPI_IOC_GET_CS_STATE ---------------------------------------------------*/
+        case XSPI_IOC_GET_CS_STATE : {
+            enum xspiCsState csState;
+
+            cfgChnCsStateGet(
+                ctx,
+                &csState);
+
+            if (NULL != usr) {
+                retval = rtdm_safe_copy_to_user(
+                    usr,
+                    arg,
+                    &csState,
+                    sizeof(int));
+            } else {
+                *(int *)arg = (int)csState;
+            }
+
+            break;
+        }
+
+/*-- XSPI_IOC_SET_CLOCK_FREQ -------------------------------------------------*/
+        case XSPI_IOC_SET_CLOCK_FREQ : {
+
+        }
+
+/*-- XSPI_IOC_GET_CLOCK_FREQ -------------------------------------------------*/
+        case XSPI_IOC_GET_CLOCK_FREQ : {
+
+        }
+
+/*-- Unhandled request -------------------------------------------------------*/
         default : {
             LOG_DBG("IOC: unknown request (%d) received", req);
             retval = -EINVAL;
         }
+    }
+
+    if (0 != retval) {
+        LOG_INFO("IOC: failed to execute IO request, err: %d", -retval);
     }
 
     return (retval);
