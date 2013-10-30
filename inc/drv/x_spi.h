@@ -31,6 +31,7 @@
 
 #include "rtdm/rtdm_driver.h"
 
+#include "drv/x_spi_ioctl.h"
 #include "drv/x_spi_cfg.h"
 #include "dbg/dbg.h"
 
@@ -60,20 +61,30 @@ struct chnCtx {
     struct unitCtx {
 
     }                   tx, rx;
-    struct locChache {
-
-    }                   locCache;
+    struct chnCgf {
+        enum xspiTransferMode transferMode;
+        enum xspiPinLayout  pinLayout;
+        enum xspiCsDelay    csDelay;
+        enum xspiCsPolarity csPolarity;
+        enum xspiCsState    csState;
+        uint32_t            wordLength;
+    }                   cfg;
     bool_T              online;
 };
 
 struct devCtx {
     rtdm_lock_t         lock;
-    struct cache {
-        int32_t             fifo;/* Channel number with FIFO enabled*/
-    }                   cache;
-    struct chnCtx *     chns[DEF_CHN_COUNT];
-    uint32_t            chn;
+    struct globalCfg {
+        enum xspiChn        chn;
+        enum xspiFifoChn    fifoChn;/* Channel number with FIFO enabled*/
+        enum xspiCsMode     csMode;
+        enum xspiMode       mode;
+        enum xspiChannelMode channelMode;
+        enum xspiInitialDelay   delay;
+    }                   cfg;
+    struct chnCtx       chn[DEF_CHN_COUNT];
     uint32_t            activity;
+    rtdm_sem_t          idleLock;
 #if (1u == CFG_DBG_API_VALIDATION)
     portReg_T           signature;
 #endif
