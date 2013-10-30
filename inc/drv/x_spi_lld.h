@@ -73,7 +73,7 @@ volatile uint8_t * lldRemapGet(
  * @param       dev
  *              RT device descriptor
  */
-void lldDevReset(
+void lldReset(
     struct rtdm_device * dev);
 
 /**@brief       Enable FIFO on specified channel
@@ -100,13 +100,138 @@ void lldFIFOChnDisable(
  * @param       dev
  *              RT device descriptor
  * @param       chn
- *
- * @param mode
+ *              Channel
+ * @param       mode
+ *              CS mode:
+ *              0 - enabled
+ *              1 - disabled
  */
 void lldCsModeSet(
     struct rtdm_device * dev,
-    int32_t             chn,
     uint32_t            mode);
+
+/**@brief       Set Master/Slave mode
+ * @param       dev
+ *              RT device descriptor
+ * @param       mode
+ *              0 - Master
+ *              1 - Slave
+ */
+void lldModeSet(
+    struct rtdm_device * dev,
+    uint32_t            mode);
+
+/**@brief       Set channel mode to single or multichannel
+ * @param       dev
+ *              RT device descriptor
+ * @param       chnMode
+ *              0 - Multichannel mode
+ *              1 - Single channel mode
+ */
+void lldChannelModeSet(
+    struct rtdm_device * dev,
+    uint32_t            chnMode);
+
+/**@brief       Initial SPI delay for first transfer
+ * @param       dev
+ *              RT device descriptor
+ * @param       delay
+ *              0 - no delay for first transfer
+ *              1 - 4 SPI clocks
+ *              2 - 8 SPI clocks
+ *              3 - 16 SPI clocks
+ *              4 - 32 SPI clocks
+ */
+void lldInitialDelaySet(
+    struct rtdm_device * dev,
+    uint32_t            delay);
+
+/**@brief       Transmit/receive modes
+ * @param       dev
+ *              RT device descriptor
+ * @param       mode
+ *              0 - Transmit and receive mode
+ *              1 - Receive only mode
+ *              2 - Transmit only mode
+ */
+void lldChnTransferModeSet(
+    struct rtdm_device * dev,
+    uint32_t            chn,
+    uint32_t            mode);
+
+/**@brief       Set pin layout
+ * @param       dev
+ *              RT device descriptor
+ * @param       chn
+ *              Selected channel
+ * @param       layout
+ *              0 - Rx = SPIDAT[1], Tx = SPIDAT[0]
+ *              1 - Rx = SPIDAT[0], Tx = SPIDAT[1]
+ */
+void lldChnPinLayoutSet(
+    struct rtdm_device * dev,
+    uint32_t            chn,
+    uint32_t            layout);
+
+/**@brief       Set data word length
+ * @param       dev
+ *              RT device descriptor
+ * @param       chn
+ *              Selected channel
+ * @param       wordLength
+ *              Data word length in bits. Valid range is from 4 to 32 bits.
+ */
+void lldChnWordLengthSet(
+    struct rtdm_device * dev,
+    uint32_t            chn,
+    uint32_t            wordLength);
+
+/**@brief       Set CS delay
+ * @param       dev
+ *              RT device descriptor
+ * @param       chn
+ *              Selected channel
+ * @param       delay
+ *              0 - 0.5 clock cycles
+ *              1 - 1.5 clock cycles
+ *              2 - 2.5 clock cycles
+ *              3 - 3.5 clock cycles
+ */
+void lldChnCsDelaySet(
+    struct rtdm_device * dev,
+    uint32_t            chn,
+    uint32_t            delay);
+
+/**@brief       Set active CS polarity
+ * @param       dev
+ *              RT device descriptor
+ * @param       chn
+ *              Selected channel
+ * @param       polarity
+ *              0 - Active high
+ *              1 - Active low
+ */
+void lldChnCsPolaritySet(
+    struct rtdm_device * dev,
+    uint32_t            chn,
+    uint32_t            polarity);
+
+/**@brief       Force CS state to given state parameter
+ * @param       dev
+ *              RT device descriptor
+ * @param       chn
+ *              Selected channel
+ * @param       state
+ *              0 - Inactive state
+ *              1 - Active state
+ * @return      Operation status
+ *              0 - success
+ *              !0 - standard Linux error define
+ */
+int32_t lldChnCsStateSet(
+    struct rtdm_device * dev,
+    uint32_t            chn,
+    uint32_t            state);
 
 /*--------------------------------------------------------  C++ extern end  --*/
 #ifdef __cplusplus

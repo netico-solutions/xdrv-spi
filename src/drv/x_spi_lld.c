@@ -47,8 +47,20 @@
 #define MCSPI_SYSSTATUS_RESETDONE_Mask  (0x01u << MCSPI_SYSSTATUS_RESETDONE_Pos)
 
 /*-- Channel registers bit definitions ---------------------------------------*/
-#define MCSPI_MODULCTRL_PIN32_Pos       (1u)
-#define MCSPI_MODULCTRL_PIN32_Mask      (0x01u << MCSPI_MODULCTRL_PIN32_Pos)
+#define MCSPI_MODULCTRL_FDAA_Pos        (8u)
+#define MCSPI_MODULCTRL_FDAA_Mask       (0x01u << MCSPI_MODULCTRL_FDAA_Pos)
+#define MCSPI_MODULCTRL_MOA_Pos         (7u)
+#define MCSPI_MODULCTRL_MOA_Mask        (0x01u << MCSPI_MODULCTRL_MOA_Pos)
+#define MCSPI_MODULCTRL_INITDLY_Pos     (4u)
+#define MCSPI_MODULCTRL_INITDLY_Mask    (0x07u << MCSPI_MODULCTRL_INITDLY_Pos)
+#define MCSPI_MODULCTRL_SYSTEM_TEST_Pos (3u)
+#define MCSPI_MODULCTRL_SYSTEM_TEST_Mask (0x01u << MCSPI_MODULCTRL_SYSTEM_TEST_Pos)
+#define MCSPI_MODULCTRL_MS_Pos          (2u)
+#define MCSPI_MODULCTRL_MS_Mask         (0x01u << MCSPI_MODULCTRL_MS_Pos)
+#define MCSPI_MODULCTRL_PIN34_Pos       (1u)
+#define MCSPI_MODULCTRL_PIN34_Mask      (0x01u << MCSPI_MODULCTRL_PIN34_Pos)
+#define MCSPI_MODULCTRL_SINGLE_Pos      (0u)
+#define MCSPI_MODULCTRL_SINGLE_Mask     (0x01u << MCSPI_MODULCTRL_SINGLE_Pos)
 
 #define MCSPI_CH_CONF_CLKG_Pos          (29u)
 #define MCSPI_CH_CONF_CLKG_Mask         (0x01u << MCSPI_CH_CONF_CLKG_Pos)
@@ -144,6 +156,9 @@ static struct devData * getDevData(
 static int32_t shadowCreate(
     struct rtdm_device * dev);
 
+static void shadowDestroy(
+    struct rtdm_device * dev);
+
 static void shadowUpdate(
     struct rtdm_device * dev);
 
@@ -182,6 +197,10 @@ DECL_MODULE_INFO("x_spi_lld", "Low-level device driver", DEF_DRV_AUTHOR);
 
 /*======================================================  GLOBAL VARIABLES  ==*/
 /*============================================  LOCAL FUNCTION DEFINITIONS  ==*/
+
+/*------------------------------------------------------------------------*//**
+* @name         Hardware register access functions
+* @{ *//*--------------------------------------------------------------------*/
 
 static inline void regWrite(
     volatile uint8_t *  io,
@@ -233,6 +252,14 @@ static struct devData * getDevData(
     return ((struct devData *)dev->device_data);
 }
 
+/**@} *//*----------------------------------------------------------------*//**
+* @name         Shadow cache management functions
+* @brief        Any access to register goes through shadow memory
+* @details      Default cache policy is read cache-write through. If a register
+*               needs to be updated from HW then xUpdate() functions should be
+*               used.
+* @{ *//*--------------------------------------------------------------------*/
+
 static int32_t shadowCreate(
     struct rtdm_device * dev) {
 
@@ -253,6 +280,22 @@ static int32_t shadowCreate(
         dev);
 
     return (0);
+}
+
+static void shadowDestroy(
+    struct rtdm_device * dev) {
+
+    struct devData *    devData;
+
+    devData = getDevData(
+        dev);
+
+    /* NOTE: This function may be called after shadowCreate() has failed.
+     */
+    if (NULL != devData->shadow) {
+        kfree(
+            devData->shadow);
+    }
 }
 
 static void shadowUpdate(
@@ -381,7 +424,7 @@ int32_t lldDevInit(
 
         return (ret);
     }
-    lldDevReset(
+    lldReset(
         dev);
     revision = shadowRead(
         dev,
@@ -396,7 +439,9 @@ int32_t lldDevInit(
 void lldDevTerm(
     struct rtdm_device * dev) {
 
-    lldDevReset(
+    lldReset(
+        dev);
+    shadowDestroy(
         dev);
 }
 
@@ -411,7 +456,7 @@ volatile uint8_t * lldRemapGet(
     return (devData->addr.remap);
 }
 
-void lldDevReset(
+void lldReset(
     struct rtdm_device * dev) {
 
     volatile uint8_t *  io;
@@ -475,7 +520,6 @@ void lldFIFOChnDisable(
 
 void lldCsModeSet(
     struct rtdm_device * dev,
-    int32_t             chn,
     uint32_t            mode) {
 
     uint32_t            reg;
@@ -483,12 +527,206 @@ void lldCsModeSet(
     reg = shadowRead(
         dev,
         MCSPI_MODULCTRL);
-    reg &= ~MCSPI_MODULCTRL_PIN32_Mask;
-    reg |= mode & MCSPI_MODULCTRL_PIN32_Mask;
+    reg &= ~MCSPI_MODULCTRL_PIN34_Mask;
+    reg |= mode & MCSPI_MODULCTRL_PIN34_Mask;
     shadowWrite(
         dev,
         MCSPI_MODULCTRL,
         reg);
+}
+
+void lldModeSet(
+    struct rtdm_device *dev,
+    uint32_t            mode) {
+
+    uint32_t            reg;
+
+    reg = shadowRead(
+        dev,
+        MCSPI_MODULCTRL);
+    reg &= ~MCSPI_MODULCTRL_MS_Mask;
+    reg |= mode & MCSPI_MODULCTRL_MS_Mask;
+    shadowWrite(
+        dev,
+        MCSPI_MODULCTRL,
+        reg);
+}
+
+void lldChannelModeSet(
+    struct rtdm_device * dev,
+    uint32_t            chnMode) {
+
+    uint32_t            reg;
+
+    reg = shadowRead(
+        dev,
+        MCSPI_MODULCTRL);
+    reg &= ~MCSPI_MODULCTRL_SINGLE_Mask;
+    reg |= chnMode & MCSPI_MODULCTRL_SINGLE_Mask;
+    shadowWrite(
+        dev,
+        MCSPI_MODULCTRL,
+        reg);
+}
+
+void lldInitialDelaySet(
+    struct rtdm_device * dev,
+    uint32_t            delay) {
+
+    uint32_t            reg;
+
+    reg = shadowRead(
+        dev,
+        MCSPI_MODULCTRL);
+    reg &= ~MCSPI_MODULCTRL_INITDLY_Mask;
+    reg |= delay & MCSPI_MODULCTRL_INITDLY_Mask;
+    shadowWrite(
+        dev,
+        MCSPI_MODULCTRL,
+        reg);
+}
+
+void lldChnTransferModeSet(
+    struct rtdm_device * dev,
+    uint32_t            chn,
+    uint32_t            mode) {
+
+    uint32_t            reg;
+
+    reg = shadowChnRead(
+        dev,
+        chn,
+        MCSPI_CH_CONF);
+    reg &= ~MCSPI_CH_CONF_TRM_Mask;
+    reg |= mode & MCSPI_CH_CONF_TRM_Mask;
+    shadowChnWrite(
+        dev,
+        chn,
+        MCSPI_CH_CONF,
+        reg);
+}
+
+void lldChnPinLayoutSet(
+    struct rtdm_device * dev,
+    uint32_t            chn,
+    uint32_t            layout) {
+
+    uint32_t            reg;
+
+    reg = shadowChnRead(
+        dev,
+        chn,
+        MCSPI_CH_CONF);
+
+    if (0 != layout) {
+/*-- Rx = SPIDAT[0], Tx = SPIDAT[1] ------------------------------------------*/
+        reg &= ~(MCSPI_CH_CONF_IS_Mask & MCSPI_CH_CONF_DPE1_Mask);
+        reg |= MCSPI_CH_CONF_DPE0_Mask;
+    } else {
+/*-- Rx = SPIDAT[1], Tx = SPIDAT[0] ------------------------------------------*/
+        reg |= MCSPI_CH_CONF_IS_Mask | MCSPI_CH_CONF_DPE1_Mask;
+        reg &= ~MCSPI_CH_CONF_DPE0_Mask;
+    }
+    shadowChnWrite(
+        dev,
+        chn,
+        MCSPI_CH_CONF,
+        reg);
+}
+
+void lldChnWordLengthSet(
+    struct rtdm_device * dev,
+    uint32_t            chn,
+    uint32_t            wordLength) {
+
+    uint32_t            reg;
+
+    reg = shadowChnRead(
+        dev,
+        chn,
+        MCSPI_CH_CONF);
+    reg &= ~MCSPI_CH_CONF_WL_Mask;
+    reg |= wordLength & MCSPI_CH_CONF_WL_Mask;
+    shadowChnWrite(
+        dev,
+        chn,
+        MCSPI_CH_CONF,
+        reg);
+}
+
+void lldChnCsDelaySet(
+    struct rtdm_device * dev,
+    uint32_t            chn,
+    uint32_t            delay) {
+
+    uint32_t            reg;
+
+    reg = shadowChnRead(
+        dev,
+        chn,
+        MCSPI_CH_CONF);
+    reg &= ~MCSPI_CH_CONF_TCS_Mask;
+    reg |= delay & MCSPI_CH_CONF_TCS_Mask;
+    shadowChnWrite(
+        dev,
+        chn,
+        MCSPI_CH_CONF,
+        reg);
+}
+
+void lldChnCsPolaritySet(
+    struct rtdm_device * dev,
+    uint32_t            chn,
+    uint32_t            polarity) {
+
+    uint32_t            reg;
+
+    reg = shadowChnRead(
+        dev,
+        chn,
+        MCSPI_CH_CONF);
+    reg &= ~MCSPI_CH_CONF_EPOL_Mask;
+    reg |= polarity & MCSPI_CH_CONF_EPOL_Mask;
+    shadowChnWrite(
+        dev,
+        chn,
+        MCSPI_CH_CONF,
+        reg);
+}
+
+int32_t lldChnCsStateSet(
+    struct rtdm_device * dev,
+    uint32_t            chn,
+    uint32_t            state) {
+
+    uint32_t            reg;
+
+    reg = shadowRead(dev, MCSPI_MODULCTRL);
+/* Ensure master mode                                                         */
+
+    if (0 != (reg & MCSPI_MODULCTRL_MS_Mask)) {
+
+        return (-EPERM);
+    }
+/* Ensure single channel                                                      */
+
+    if (0 == (reg & MCSPI_MODULCTRL_SINGLE_Mask)) {
+
+        return (-EPERM);
+    }
+    reg = shadowChnRead(
+        dev,
+        chn,
+        MCSPI_CH_CONF);
+    reg &= ~MCSPI_CH_CONF_FORCE_Mask;
+    reg |= state & MCSPI_CH_CONF_FORCE_Mask;
+    shadowChnWrite(
+        dev,
+        chn,
+        MCSPI_CH_CONF,
+        reg);
+
+    return (0);
 }
 
 /*================================*//** @cond *//*==  CONFIGURATION ERRORS  ==*/
