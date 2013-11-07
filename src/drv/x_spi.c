@@ -164,7 +164,10 @@ static int32_t ctxInit(
         }
     }
     rtdm_lock_init(&devCtx->lock);
-    devCtx->activity    = 0u;
+    rtdm_sem_init(
+        &devCtx->actvLock,
+        1ul);
+    devCtx->actvCnt     = 0u;
     ES_DBG_API_OBLIGATION(devCtx->signature = DEF_DEVCTX_SIGNATURE);
 
     return (ret);
@@ -174,47 +177,6 @@ static void ctxTerm(
     struct rtdm_dev_context * ctx) {
 
 }
-
-/* NOTE: rtdm_sem_down() requires to be called from preemptable code section,
- *       therefore we must temporarily disable global locks. This function will
- *       block if a configuration operation is ongoing.
- */
-static void activitySetRunningI(
-    struct rtdm_dev_context * ctx,
-    rtdm_lockctx_t *    lockCtx) {
-
-    struct devCtx *     devCtx;
-
-    devCtx = getDevCtx(
-        ctx);
-    devCtx->activity++;
-
-    if (1u == devCtx->activity) {
-        rtdm_lock_put_irqrestore(&devCtx->lock, *lockCtx);
-        rtdm_sem_down(
-            &devCtx->idleLock);
-        rtdm_lock_get_irqsave(&devCtx->lock, *lockCtx);
-    }
-}
-
-static void activitySetIdleI(
-    struct rtdm_dev_context * ctx) {
-
-    struct devCtx *     devCtx;
-
-    devCtx = getDevCtx(
-        ctx);
-    devCtx->activity--;
-
-    if (0u == devCtx->activity) {
-        rtdm_sem_up(
-            &devCtx->idleLock);
-    }
-}
-
-/*
- * TODO: Nešto što će da čeka na slobodne resurse
- */
 
 static int32_t cfgApply(
     struct rtdm_dev_context * ctx) {
@@ -294,7 +256,7 @@ static int32_t cfgFIFOChnSet(
         ctx);
     rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
 
-    if (XSPI_ACTIVITY_RUNNIG == devCtx->activity) {
+    if (XSPI_ACTIVITY_RUNNIG == devCtx->actvCnt) {
         rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
 
         return (-EAGAIN);
@@ -348,7 +310,7 @@ static int32_t cfgCsModeSet(
         ctx);
     rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
 
-    if (XSPI_ACTIVITY_RUNNIG == devCtx->activity) {
+    if (XSPI_ACTIVITY_RUNNIG == devCtx->actvCnt) {
         rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
 
         return (-EAGAIN);
@@ -393,7 +355,7 @@ static int32_t cfgModeSet(
         ctx);
     rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
 
-    if (XSPI_ACTIVITY_RUNNIG == devCtx->activity) {
+    if (XSPI_ACTIVITY_RUNNIG == devCtx->actvCnt) {
         rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
 
         return (-EAGAIN);
@@ -437,7 +399,7 @@ static int32_t cfgChannelModeSet(
         ctx);
     rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
 
-    if (XSPI_ACTIVITY_RUNNIG == devCtx->activity) {
+    if (XSPI_ACTIVITY_RUNNIG == devCtx->actvCnt) {
         rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
 
         return (-EAGAIN);
@@ -482,7 +444,7 @@ static int32_t cfgInitialDelaySet(
         ctx);
     rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
 
-    if (XSPI_ACTIVITY_RUNNIG == devCtx->activity) {
+    if (XSPI_ACTIVITY_RUNNIG == devCtx->actvCnt) {
         rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
 
         return (-EAGAIN);
@@ -527,7 +489,7 @@ static int32_t cfgChnTransferModeSet(
         ctx);
     rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
 
-    if (XSPI_ACTIVITY_RUNNIG == devCtx->activity) {
+    if (XSPI_ACTIVITY_RUNNIG == devCtx->actvCnt) {
         rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
 
         return (-EAGAIN);
@@ -573,7 +535,7 @@ static int32_t cfgChnPinLayoutSet(
         ctx);
     rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
 
-    if (XSPI_ACTIVITY_RUNNIG == devCtx->activity) {
+    if (XSPI_ACTIVITY_RUNNIG == devCtx->actvCnt) {
         rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
 
         return (-EAGAIN);
@@ -619,7 +581,7 @@ static int32_t cfgChnWordLengthSet(
         ctx);
     rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
 
-    if (XSPI_ACTIVITY_RUNNIG == devCtx->activity) {
+    if (XSPI_ACTIVITY_RUNNIG == devCtx->actvCnt) {
         rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
 
         return (-EAGAIN);
@@ -665,7 +627,7 @@ static int32_t cfgChnCsDelaySet(
         ctx);
     rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
 
-    if (XSPI_ACTIVITY_RUNNIG == devCtx->activity) {
+    if (XSPI_ACTIVITY_RUNNIG == devCtx->actvCnt) {
         rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
 
         return (-EAGAIN);
@@ -711,7 +673,7 @@ static int32_t cfgChnCsPolaritySet(
         ctx);
     rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
 
-    if (XSPI_ACTIVITY_RUNNIG == devCtx->activity) {
+    if (XSPI_ACTIVITY_RUNNIG == devCtx->actvCnt) {
         rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
 
         return (-EAGAIN);
@@ -758,7 +720,7 @@ static int32_t cfgChnCsStateSet(
         ctx);
     rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
 
-    if (XSPI_ACTIVITY_RUNNIG == devCtx->activity) {
+    if (XSPI_ACTIVITY_RUNNIG == devCtx->actvCnt) {
         rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
 
         return (-EAGAIN);
@@ -825,9 +787,16 @@ static int handleIOctl(
     unsigned int        req,
     void __user *       arg) {
 
+    struct devCtx *     devCtx;
     int                 retval;
 
     retval = 0;
+    devCtx = getDevCtx(
+        ctx);
+
+/*-- Set activity: disable communication -------------------------------------*/
+    rtdm_sem_down(
+        &devCtx->actvLock);
 
     switch (req) {
 /*-- XSPI_IOC_SET_CURRENT_CHN ------------------------------------------------*/
@@ -1211,6 +1180,10 @@ static int handleIOctl(
         LOG_INFO("IOC: failed to execute IO request, err: %d", -retval);
     }
 
+/*-- Reset activity: enable communication ------------------------------------*/
+    rtdm_sem_up(
+        &devCtx->actvLock);
+
     return (retval);
 }
 
@@ -1220,9 +1193,33 @@ static ssize_t handleRd(
     void *              dst,
     size_t              bytes) {
 
+    rtdm_lockctx_t      lockCtx;
+    struct devCtx *     devCtx;
     ssize_t             read;
 
     read = 0;
+    devCtx = getDevCtx(
+        ctx);
+
+/*-- Set activity: disable configuration -------------------------------------*/
+    rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
+    devCtx->actvCnt++;
+
+    if (1u == devCtx->actvCnt) {
+        rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+        rtdm_sem_down(
+            &devCtx->actvLock);
+    } else {
+        rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+    }
+
+/*-- Reset activity: enable configuration ------------------------------------*/
+    devCtx->actvCnt--;
+
+    if (0u == devCtx->actvCnt) {
+        rtdm_sem_up(
+            &devCtx->actvLock);
+    }
 
     return (read);
 }
@@ -1233,9 +1230,33 @@ static ssize_t handleWr(
     const void *        src,
     size_t              bytes) {
 
+    rtdm_lockctx_t      lockCtx;
+    struct devCtx *     devCtx;
     ssize_t             write;
 
     write = 0;
+    devCtx = getDevCtx(
+        ctx);
+
+/*-- Set activity: disable configuration -------------------------------------*/
+    rtdm_lock_get_irqsave(&devCtx->lock, lockCtx);
+    devCtx->actvCnt++;
+
+    if (1u == devCtx->actvCnt) {
+        rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+        rtdm_sem_down(
+            &devCtx->actvLock);
+    } else {
+        rtdm_lock_put_irqrestore(&devCtx->lock, lockCtx);
+    }
+
+/*-- Reset activity: enable configuration ------------------------------------*/
+    devCtx->actvCnt--;
+
+    if (0u == devCtx->actvCnt) {
+        rtdm_sem_up(
+            &devCtx->actvLock);
+    }
 
     return (write);
 }

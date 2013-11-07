@@ -83,8 +83,8 @@ struct devCtx {
         enum xspiInitialDelay   delay;
     }                   cfg;
     struct chnCtx       chn[DEF_CHN_COUNT];
-    uint32_t            activity;
-    rtdm_sem_t          idleLock;
+    uint32_t            actvCnt;
+    rtdm_sem_t          actvLock;
 #if (1u == CFG_DBG_API_VALIDATION)
     portReg_T           signature;
 #endif
